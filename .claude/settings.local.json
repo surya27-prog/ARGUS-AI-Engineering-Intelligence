@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($p = \\(Get-Command pandoc -ErrorAction SilentlyContinue\\); if \\($p\\) { $p.Source } else { \"no pandoc\" })"
+    ]
+  }
+}
