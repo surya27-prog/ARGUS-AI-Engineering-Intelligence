@@ -1,0 +1,79 @@
+# ARGUS local development stack.
+#
+#   docker compose up -d          start everything
+#   docker compose ps             check health
+#   docker compose logs -f neo4j  follow one service
+#   docker compose down           stop (keeps data)
+#   docker compose down -v        stop and wipe all data
+#
+# Copy .env.example to .env before starting.
+
+name: argus
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: argus-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-argus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-argus_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-argus}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-argus} -d ${POSTGRES_DB:-argus}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: argus-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-argus_dev_password}
+      NEO4J_PLUGINS: '["apoc"]'
+      # Sized for a laptop. Raise heap if you parse repos with >100k symbols.
+      # Env-var mapping: single _ becomes a dot, double __ becomes a literal _.
+      # So server.memory.pagecache.size -> NEO4J_server_memory_pagecache_size,
+      # but server.memory.heap.initial_size -> ..._heap_initial__size.
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 2G
+      NEO4J_server_memory_pagecache_size: 512m
+    ports:
+      - "7474:7474"   # HTTP browser UI
+      - "7687:7687"   # Bolt driver
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      # cypher-shell ships with the image and proves Bolt + auth work, which an
+      # HTTP probe on 7474 does not.
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p ${NEO4J_PASSWORD:-argus_dev_password} 'RETURN 1' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.5
+    container_name: argus-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"   # REST + dashboard at /dashboard
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    # No healthcheck: the Qdrant image ships no shell or curl, so every
+    # in-container probe form fails and marks a working service unhealthy.
+    # Verify from the host instead: curl http://localhost:6333/readyz
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  neo4j_logs:
+  qdrant_data:

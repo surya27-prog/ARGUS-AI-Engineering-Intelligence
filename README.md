@@ -87,7 +87,7 @@ ARGUS/
 
 ## Getting started
 
-> Setup instructions land at the end of Week 1.
+Requires Docker Desktop, Python 3.11+, and Node 22+. Full instructions and troubleshooting in [`docs/SETUP.md`](docs/SETUP.md).
 
 ```bash
 git clone https://github.com/DeepuChandru/ARGUS-AI-Engineering-Intelligence.git
@@ -95,6 +95,8 @@ cd ARGUS
 cp .env.example .env
 docker compose up -d
 ```
+
+That brings up PostgreSQL (5432), Neo4j (7687 Bolt, 7474 browser), and Qdrant (6333). The backend and frontend land in Week 1.
 
 ## Development plan
 
