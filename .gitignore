@@ -43,3 +43,7 @@ neo4j_data/
 postgres_data/
 qdrant_data/
 .claude/
+
+# uv
+uv.lock.bak
+.python-version.bak
