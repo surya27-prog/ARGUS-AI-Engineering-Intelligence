@@ -15,27 +15,21 @@ When the user types `#workdone` (anywhere in a message), append a new entry to
    ```
    powershell -c "$n = Get-Date; '{0:dddd, dd MMMM yyyy} at {0:HH:mm} (UTC{1})' -f $n, (Get-Date -Format 'zzz')"
    ```
-3. Use this entry shape:
+3. **Keep entries short.** Simple bullets of what was done — no prose
+   paragraphs, no explanations, no "Next:" section. Use this shape:
    ```markdown
    ## <Weekday, DD Month YYYY> at <HH:MM> (UTC<offset>)
 
-   **<Week N, Day(s) — short theme>**
+   Week N, Day(s)
 
-   <One or two sentences on what was accomplished.>
-
-   - <specific change, with concrete versions/names where relevant>
-   - <specific change>
-
-   **Next:** <the next task from TIMELINE.md>
+   - <what was done>
+   - <what was done>
 
    ---
    ```
-4. Summarize what was **actually done in the session**, not what was planned.
-   Name real versions, file paths, and commands. If something was attempted and
-   failed or was left incomplete, say so — the log is for honest review, not a
-   highlight reel.
-5. Confirm to the user in one line that the entry was added, and don't print the
-   whole entry back to them.
+4. List what was **actually done in the session**, not what was planned. If
+   something failed or was left incomplete, add a bullet saying so.
+5. Reply with one line confirming the entry was added. Don't print it back.
 
 ## Project conventions
 
