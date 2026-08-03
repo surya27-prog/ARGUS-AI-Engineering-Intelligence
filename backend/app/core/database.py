@@ -11,6 +11,9 @@ engine = create_engine(
     settings.database_url,
     pool_pre_ping=True,
     echo=settings.app_env == "development",
+    # psycopg blocks indefinitely by default when nothing is listening, which
+    # would hang /health instead of letting it report Postgres as down.
+    connect_args={"connect_timeout": settings.db_connect_timeout},
 )
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)

@@ -20,13 +20,15 @@ When the user types `#workdone` (anywhere in a message), append a new entry to
    ```markdown
    ## <Weekday, DD Month YYYY> at <HH:MM> (UTC<offset>)
 
-   Week N, Day(s)
+   Week N, Day(s) — branch `<branch>`
 
    - <what was done>
    - <what was done>
 
    ---
    ```
+   Always record the branch the work was committed on. Get it from the system,
+   don't assume it: `git rev-parse --abbrev-ref HEAD`.
 4. List what was **actually done in the session**, not what was planned. If
    something failed or was left incomplete, add a bullet saying so.
 5. Reply with one line confirming the entry was added. Don't print it back.
