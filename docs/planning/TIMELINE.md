@@ -74,7 +74,7 @@ Goal: ask ARGUS a question in English, get an answer grounded in the actual code
 
 | Day | Date | Work | Done when |
 |---|---|---|---|
-| Mon | 17 Aug | **Pick the LLM provider** (decision deferred from Week 1). Write `LLMProvider` interface — `complete()`, `embed()` — with one concrete impl behind it, config-selected. | Swapping provider = one env var |
+| Mon | 17 Aug | **Pick the providers** (deferred from Week 1). Two separate interfaces, not one: `ChatProvider.complete()` and `EmbeddingProvider.embed()` — Anthropic has no embeddings endpoint, so chat and embeddings are independent choices. One concrete impl behind each, config-selected. | Swapping either provider = one env var |
 | Tue | 18 Aug | Chunking strategy: chunk by *symbol* (function/class body + docstring + file path header), not fixed token windows. Embed → Qdrant with metadata payload. | Fixture repo fully embedded, collection count sane |
 | Wed | 19 Aug | Retrieval: semantic search endpoint. Test with 10 hand-written questions, eyeball whether the right chunks come back. Tune `top_k` and chunk size. | 8/10 questions retrieve the correct symbol in top 5 |
 | Thu | 20 Aug | **Hybrid retrieval — the differentiator.** Combine vector hits with graph expansion: retrieve a function, then pull its callers/callees from Neo4j into context. | Answers reference related code the pure-vector search missed |
