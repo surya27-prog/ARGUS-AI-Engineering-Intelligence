@@ -21,6 +21,8 @@ class Settings(BaseSettings):
 
     # PostgreSQL
     database_url: str = "postgresql+psycopg://argus:argus_dev_password@localhost:5432/argus"
+    # Seconds to wait for a Postgres connection before giving up.
+    db_connect_timeout: int = 5
 
     # Neo4j
     neo4j_uri: str = "bolt://localhost:7687"

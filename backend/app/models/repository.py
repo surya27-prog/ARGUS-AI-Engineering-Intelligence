@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from sqlalchemy import DateTime, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
 
-class ParseStatus(str, Enum):
+class ParseStatus(StrEnum):
     PENDING = "pending"
     PARSING = "parsing"
     COMPLETE = "complete"

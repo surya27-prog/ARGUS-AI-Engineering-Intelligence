@@ -4,17 +4,24 @@
 
 | Tool | Version | Check |
 |---|---|---|
-| Docker Desktop | 28.x | `docker info` |
+| Docker Desktop | 28.x+ | `docker info` |
 | Python | 3.11+ | `py --version` |
 | Node.js | 22 LTS+ | `node --version` |
 | uv | 0.11+ | `uv --version` |
 | Git | 2.40+ | `git --version` |
 
-On Windows, all four installable via winget:
+On Windows, installable via winget (one `--id` per package):
 
 ```bash
-winget install --id Docker.DockerDesktop OpenJS.NodeJS.LTS astral-sh.uv GitHub.cli -e
+winget install --id Docker.DockerDesktop -e; winget install --id OpenJS.NodeJS.LTS -e; winget install --id astral-sh.uv -e; winget install --id GitHub.cli -e
 ```
+
+Open a new terminal afterwards — winget updates `PATH`, but existing shells keep
+the old value, which shows up as `docker`/`uv` "not recognized" or as
+`docker-credential-desktop ... not found in %PATH%` during an image pull.
+
+Docker Desktop must be **launched** before any `docker` command works; installing
+the CLI does not start the engine.
 
 ## Start the data stack
 
@@ -32,6 +39,58 @@ docker compose ps
 ```
 
 Expected: `postgres` healthy, `neo4j` healthy, `qdrant` up (no healthcheck — see below).
+
+## Set up the backend
+
+Dependencies are declared in `backend/pyproject.toml` and pinned in
+`backend/uv.lock`. Two ways to install them — both produce the same versions.
+
+**With uv (preferred).** Creates `backend/.venv` from the lockfile:
+
+```bash
+cd backend && uv sync --frozen
+```
+
+**With plain pip**, using the exported requirement files:
+
+```bash
+cd backend && py -m venv .venv && .venv/Scripts/python -m pip install -r requirements.txt -r requirements-dev.txt
+```
+
+`requirements.txt` (runtime) and `requirements-dev.txt` (pytest, ruff) are
+generated from `uv.lock` — never hand-edit them. Regenerate after changing
+dependencies in `pyproject.toml`:
+
+```bash
+cd backend && uv export --frozen --no-hashes --no-emit-project --no-dev -o requirements.txt && uv export --frozen --no-hashes --no-emit-project --only-dev -o requirements-dev.txt
+```
+
+## Apply migrations
+
+Requires the Postgres container to be up. Run from `backend/` — both Alembic's
+`prepend_sys_path` and the `../.env` lookup in `Settings` are relative to it:
+
+```bash
+cd backend && .venv/Scripts/python -m alembic upgrade head
+```
+
+## Run the API
+
+```bash
+cd backend && .venv/Scripts/python -m uvicorn app.main:app --reload
+```
+
+`GET http://localhost:8000/health` returns 200 with `"postgres": "up"` when the
+stack is running. Interactive docs at http://localhost:8000/docs.
+
+Tests:
+
+```bash
+cd backend && .venv/Scripts/python -m pytest -q
+```
+
+`test_health_reports_postgres_up` needs the compose stack running; the other
+three pass standalone.
 
 ## Services
 
