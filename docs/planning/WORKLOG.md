@@ -25,3 +25,17 @@ Week 1
 - Added `CLAUDE.md` with the `#workdone` rule and project conventions
 
 ---
+
+## Monday, 03 August 2026 at 18:19 (UTC-04:00)
+
+Week 1, Day 3
+
+- Set up backend with uv (pinned to Python 3.11)
+- Added config with pydantic-settings, SQLAlchemy engine, and `get_db`
+- Created `Repository` model
+- Built `GET /health` — returns 200 and confirms Postgres is up
+- Wired Alembic to `database/migrations`, first migration applied
+- Wrote 4 tests, all passing
+- Pushed all commits to `surya_branch`
+
+---
