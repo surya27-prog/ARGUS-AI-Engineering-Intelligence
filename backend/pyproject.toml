@@ -11,6 +11,8 @@ dependencies = [
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.2",
     "alembic>=1.14",
+    # Required by FastAPI to accept the multipart zip upload on POST /repos/upload.
+    "python-multipart>=0.0.20",
 ]
 
 [dependency-groups]

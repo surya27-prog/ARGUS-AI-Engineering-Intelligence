@@ -45,6 +45,8 @@ python-dotenv==1.2.2
     # via
     #   pydantic-settings
     #   uvicorn
+python-multipart==0.0.20
+    # via argus-backend
 pyyaml==6.0.3
     # via uvicorn
 sqlalchemy==2.0.51
