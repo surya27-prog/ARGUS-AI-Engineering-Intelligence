@@ -139,3 +139,25 @@ Not done:
 - Week 1 demo recording
 
 ---
+
+## Thursday, 13 August 2026 at 15:39 (UTC-04:00)
+
+Week 1, Days 4–7 committed — branch `deepu_branch`
+
+- Switched to `C:\dev\ARGUS-AI-Engineering-Intelligence` as the working copy;
+  the `Downloads` copy has the same files but no `.git`, which is why the three
+  entries above could not record a real branch
+- Committed Week 1 in three commits on `deepu_branch`:
+  - `954447e` Days 4–5 — parser package (17 files)
+  - `33cd402` Day 6 — ingestion API and Next.js upload page (24 files)
+  - `2e019cf` Day 7 — architecture overview and work log
+- Days 4 and 5 are one commit: `models.py`, `walker.py` and `cli.py` were
+  extended on Day 5, so the two days cannot be split cleanly after the fact
+- Working tree clean; nothing pushed yet
+
+Still outstanding from Week 1:
+
+- Tag `v0.1-parser`
+- Week 1 demo recording
+
+---
