@@ -161,3 +161,26 @@ Still outstanding from Week 1:
 - Week 1 demo recording
 
 ---
+
+## Thursday, 13 August 2026 at 15:53 (UTC-04:00)
+
+Week 2, Day 1 — branch `deepu_branch`
+
+- Wrote `docs/architecture/graph-schema.md`, committed as `5001f69`
+- Node labels `Repo`, `File`, `Class`, `Function`, `Module` with properties,
+  keys and the Postgres bridge; relationships `CONTAINS`, `IMPORTS`, `CALLS`,
+  `INHERITS` with direction and edge properties
+- Single deterministic `key` string per node instead of a composite key —
+  `NODE KEY` is Neo4j Enterprise only and this project runs 5.26 Community
+- Re-parse strategy is stamp-and-sweep: `MERGE` alone never removes a deleted
+  file, so writes carry a `run_id` and the run deletes what it did not touch
+- Resolution and confidence model for imports, calls and inheritance; ambiguous
+  and unresolved call sites are counted, not guessed at
+- `CALLS` edges are aggregated per caller/callee pair with a `count`, not one
+  edge per call site
+- Only external modules get `:Module` nodes; internal module names stay on
+  `File.module`, since in Python an internal module is a file
+- Included the Cypher for Friday's dependency/dependent endpoints so the schema
+  is checked against its real queries now rather than on Friday
+
+---
