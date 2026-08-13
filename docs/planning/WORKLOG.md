@@ -50,3 +50,92 @@ Week 1, Days 1–3 verification — branch `deepu_branch`
   nothing needs it until the Week 1 Saturday frontend task
 
 ---
+
+## Thursday, 13 August 2026 at 12:02 (UTC-04:00)
+
+Week 1, Day 4 — branch `deepu_branch` (working copy has no `.git`, so the branch
+could not be read from the system; recorded from the previous entry)
+
+- Built the parser package: `parser/parser/{models,ingest,walker,cli}.py`
+- Froze the parser output schema in `models.py` — `FileInfo`, `SkippedPath`,
+  `RepoInventory` plus `Language`/`SourceKind`/`SkipReason` enums
+- `FileInfo` carries a path-derived dotted `module` (`app.core.config`) for
+  Week 2 import resolution, and a sha256 for change detection
+- Ingestion handles git URLs (shallow clone + commit/branch metadata), zips
+  (zip-slip rejected, GitHub wrapper dir stripped) and local dirs (read in place)
+- Walker prunes 27 vendor/cache dirs, filters to `.py`/`.pyi`, skips symlinks
+  and oversized files, and records every skip with a reason
+- `python -m parser.cli <source>` prints the inventory; `--json`, `--limit`,
+  `--show-skipped`, `--force` supported
+- Added `parser/pyproject.toml` — stdlib-only deps, ruff/pytest config matching
+  the backend
+- 34 tests green, ruff clean
+- Verified end to end against `backend/` (12 files) and a live clone of
+  `psf/requests` (37 files, 12,032 lines)
+
+---
+
+## Thursday, 13 August 2026 at 12:32 (UTC-04:00)
+
+Week 1, Day 5 — branch `deepu_branch` (working copy still has no `.git`)
+
+- Added `parser/parser/extractor.py` — Python AST extraction to dataclasses
+- Extended the schema with `Symbol`, `Parameter`, `ImportRef`, `CallRef`,
+  `ParsedFile`, `ParsedRepo` and the `SymbolKind`/`ParameterKind` enums
+- Extracts classes, functions, methods, nested defs, decorators (with args),
+  base classes, docstrings, full signatures, return annotations, async flags
+- Qualnames flatten nested scopes to `outer.inner` / `Record.Meta`; call sites
+  are attributed to the enclosing function
+- Imports and calls are recorded as written, unresolved — relative-import depth
+  and aliases preserved for Week 2's resolution pass
+- Syntax errors return a `ParsedFile` with `error` set instead of raising, so
+  one bad file doesn't sink the parse
+- `analyze_repo()` + `python -m parser.cli <src> --symbols` wired up
+- 3 fixture files (plus a deliberately broken one) and 28 extractor tests;
+  62 tests green overall, ruff clean
+- Ran against `psf/requests`: 807 symbols, 591 imports, 2,687 call sites,
+  0 files failed to parse
+
+---
+
+## Thursday, 13 August 2026 at 15:25 (UTC-04:00)
+
+Week 1, Days 6–7 — branch `deepu_branch` (working copy still has no `.git`)
+
+Day 6 — upload page and the first vertical slice:
+
+- Added `source_files` + `symbols` tables (`app/models/source.py`) and migration
+  `7b66ffa8c249`, applied to the local database
+- `app/services/parsing.py` — the parser↔API seam; parse failures are recorded
+  on the repository row instead of raised
+- `app/api/repos.py` — `POST /repos`, `/repos/upload`, `GET /repos`, `/{id}`,
+  `/{id}/files`, `/{id}/symbols`, `POST /{id}/reparse`, `DELETE /{id}`
+- Parses run as background tasks; the request returns 202 and the UI polls
+- Scaffolded the Next.js 15 / React 19 frontend by hand (no CSS framework):
+  ingestion form, repository list, file browser, symbol list
+- Bumped Next from 15.1.6 to 15.5.23 — 15.1.6 carries CVE-2025-66478
+- Fixed a real Windows bug found by running the UI: re-staging an existing clone
+  died with `PermissionError [WinError 5]` because git marks `.git/objects`
+  read-only and `shutil.rmtree` refuses them; added a chmod-and-retry handler
+- Symbol list now fetches per selected file rather than filtering a loaded page,
+  and reports "showing N of M" instead of truncating silently
+- 24 backend tests green, 64 parser tests green, ruff clean, frontend builds and
+  typechecks
+- Verified in the browser end to end: pasted a GitHub URL, watched
+  pending → parsing → complete, saw 37 files and 807 symbols listed
+- Created `backend/.venv` and installed from requirements — uv was not on PATH
+  on this machine despite the Day 1–3 entry
+
+Day 7 — documentation:
+
+- Wrote `docs/architecture/overview.md` — system diagram, component
+  responsibilities, the frozen parser schema and why it is shaped that way,
+  ingestion flow, API surface, design decisions, deferred scope
+
+Not done:
+
+- Tag `v0.1-parser` — this working copy has no `.git`, so nothing can be
+  committed or tagged from here
+- Week 1 demo recording
+
+---
