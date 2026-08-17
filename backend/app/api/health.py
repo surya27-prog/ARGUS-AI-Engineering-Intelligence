@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.graph import check_connectivity
+from app.core.vectors import check_connectivity as check_qdrant
 
 router = APIRouter(tags=["health"])
 
@@ -16,6 +17,7 @@ class HealthResponse(BaseModel):
     version: str
     postgres: str
     neo4j: str
+    qdrant: str
     # Which providers are selected and whether they have credentials. Reported
     # from config rather than by calling them: a liveness probe should not make
     # a billable request every time it runs.
@@ -44,6 +46,7 @@ def health(
         version="0.1.0",
         postgres=postgres,
         neo4j=check_connectivity(),
+        qdrant=check_qdrant(),
         llm_provider=settings.llm_provider,
         embedding_provider=settings.embedding_provider,
         llm_configured=settings.has_chat_credentials,

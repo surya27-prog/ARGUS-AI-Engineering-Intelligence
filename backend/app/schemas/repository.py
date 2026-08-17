@@ -99,7 +99,9 @@ class ParseJobOut(BaseModel):
     source: str | None
     status: JobStatus
     error_message: str | None
-    failed_stage: str | None = Field(default=None, description="ingest | parse | store | graph")
+    failed_stage: str | None = Field(
+        default=None, description="ingest | parse | store | graph | vectors"
+    )
 
     file_count: int
     symbol_count: int
@@ -111,6 +113,13 @@ class ParseJobOut(BaseModel):
     graph_relationships: int
     graph_nodes_deleted: int
     graph_relationships_deleted: int
+
+    chunk_count: int
+    embedding_tokens: int
+    embedding_model: str | None = Field(
+        default=None, description="null when the embedding pass was skipped"
+    )
+    vectors_deleted: int
 
     created_at: datetime
     started_at: datetime | None

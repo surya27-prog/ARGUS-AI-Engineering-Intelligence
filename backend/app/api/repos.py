@@ -37,6 +37,7 @@ from app.schemas.repository import (
 )
 from app.services.graph_writer import delete_repo_graph
 from app.services.parsing import parse_repository
+from app.services.vector_writer import delete_repo_vectors
 
 logger = logging.getLogger(__name__)
 
@@ -255,13 +256,18 @@ def reparse_repository(
 def delete_repository(repository_id: uuid.UUID, db: Session = Depends(get_db)) -> None:
     repository = _require_repository(db, repository_id)
 
-    # Postgres cascades its own rows, but nothing cascades into Neo4j. Without
-    # this the subgraph outlives the repository that owns it, and the keys are
-    # repo-scoped so nothing would ever reach it again.
+    # Postgres cascades its own rows, but nothing cascades into Neo4j or
+    # Qdrant. Without this the subgraph and the vectors outlive the repository
+    # that owns them, and both are repo-scoped so nothing would ever reach them
+    # again. Neither failure blocks the delete.
     try:
         delete_repo_graph(repository_id)
     except Exception:  # noqa: BLE001 - a live graph must not block the delete
         logger.exception("Could not clear the graph for repository %s", repository_id)
+    try:
+        delete_repo_vectors(repository_id)
+    except Exception:  # noqa: BLE001 - same reasoning as the graph above
+        logger.exception("Could not clear the vectors for repository %s", repository_id)
 
     db.delete(repository)
     db.commit()

@@ -20,6 +20,7 @@ from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.models import JobStatus, ParseJob, ParseStatus, Repository, SourceFile, Symbol
 from app.services.graph_writer import write_parsed_repo
+from app.services.vector_writer import write_repo_vectors
 from parser import IngestError, ParsedRepo, analyze_repo
 
 logger = logging.getLogger(__name__)
@@ -123,6 +124,34 @@ def parse_repository(repository_id: UUID, source: str) -> None:
         job.graph_relationships = result.relationships_written
         job.graph_nodes_deleted = result.nodes_deleted
         job.graph_relationships_deleted = result.relationships_deleted
+
+        # Embedding is skipped without credentials rather than failing the
+        # parse. Weeks 1-2 are fully useful with no embedding provider — files,
+        # symbols and the whole dependency graph — and making a key mandatory
+        # would break every one of those flows for anyone who has not set one.
+        if settings.has_embedding_credentials:
+            try:
+                vectors = write_repo_vectors(repository.id, parsed, run_id=str(job.run_id))
+            except Exception as exc:  # noqa: BLE001 - recorded on the row, not raised
+                logger.exception("Embedding failed for repository %s", repository_id)
+                _fail(
+                    db,
+                    repository,
+                    job,
+                    f"embedding failed — {type(exc).__name__}: {exc}",
+                    stage="vectors",
+                    started=started,
+                )
+                return
+            job.chunk_count = vectors.chunks_written
+            job.embedding_tokens = vectors.input_tokens
+            job.embedding_model = vectors.embedding_model
+            job.vectors_deleted = vectors.points_deleted
+        else:
+            logger.info(
+                "No embedding credentials; skipping the vector pass for %s", repository_id
+            )
+
         job.status = JobStatus.COMPLETE
         _finish(job, started)
 

@@ -53,8 +53,8 @@ class ParseJob(Base):
         String(20), nullable=False, default=JobStatus.PENDING
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Which stage failed — `ingest`, `parse`, `store` or `graph`. A failure
-    # message alone does not say whether there is usable data behind it.
+    # Which stage failed — `ingest`, `parse`, `store`, `graph` or `vectors`. A
+    # failure message alone does not say whether there is usable data behind it.
     failed_stage: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # What the parser found.
@@ -70,6 +70,14 @@ class ParseJob(Base):
     graph_relationships: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     graph_nodes_deleted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     graph_relationships_deleted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # What the embedding pass did. `embedding_model` is NULL when the pass was
+    # skipped — which is the normal state without an embedding key, and has to
+    # be distinguishable from "ran and produced nothing".
+    chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    embedding_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    vectors_deleted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

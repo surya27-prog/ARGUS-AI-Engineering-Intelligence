@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str = ""
     qdrant_collection: str = "argus_code_chunks"
+    qdrant_timeout_seconds: int = 30
 
     # Parser
     workspace_dir: str = "./workspace"
