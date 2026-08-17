@@ -260,3 +260,77 @@ tr.clickable {
   font-size: 13px;
   padding: 12px 2px;
 }
+
+/* ---------- chat ---------- */
+
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-height: 58vh;
+  overflow-y: auto;
+  padding-right: 6px;
+  margin-bottom: 14px;
+}
+
+.turn-role {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.turn-body {
+  /* Answers arrive as plain text with hard wraps; preserve them without
+     letting a long line of code force the whole panel to scroll sideways. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+.turn.user .turn-body {
+  border-left: 2px solid var(--border);
+  padding-left: 10px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-hover);
+  font-size: 11px;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.chip:hover {
+  border-color: var(--accent);
+}
+
+/* A dashed border marks a citation the vector search did not match directly —
+   it was reached by following calls, so it is supporting context. */
+.chip.graph {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.chat-form {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-form input {
+  flex: 1;
+}

@@ -71,6 +71,40 @@ export interface Page<T> {
   offset: number;
 }
 
+export interface Citation {
+  path: string;
+  line_start: number;
+  line_end: number;
+  qualname: string | null;
+  kind: string;
+  score: number;
+  /** "vector" = matched the question; "graph" = reached by following calls. */
+  source: "vector" | "graph";
+  citation: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  citations: Citation[];
+  model: string | null;
+  created_at: string;
+}
+
+export interface Conversation {
+  id: string;
+  title: string;
+  created_at: string;
+  messages: ChatMessage[];
+}
+
+export interface ChatHandlers {
+  onContext: (conversationId: string, citations: Citation[]) => void;
+  onDelta: (text: string) => void;
+  onError: (detail: string) => void;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -149,4 +183,78 @@ export const api = {
     request<Page<Symbol>>(
       `/repos/${id}/symbols?limit=${limit}${fileId ? `&file_id=${fileId}` : ""}`,
     ),
+
+  listConversations: (id: string) =>
+    request<Conversation[]>(`/repos/${id}/conversations`),
+
+  getConversation: (id: string, conversationId: string) =>
+    request<Conversation>(`/repos/${id}/conversations/${conversationId}`),
+
+  /**
+   * Stream an answer.
+   *
+   * Hand-rolled rather than using EventSource, which can only issue GETs and
+   * cannot send a JSON body. The reader below parses SSE frames off a fetch
+   * stream: frames are separated by a blank line, and a frame's `data:` lines
+   * are joined before parsing.
+   */
+  async chat(
+    id: string,
+    message: string,
+    conversationId: string | null,
+    handlers: ChatHandlers,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    let response: Response;
+    try {
+      response = await fetch(`${API_URL}/repos/${id}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, conversation_id: conversationId }),
+        signal,
+      });
+    } catch {
+      throw new ApiError(`Cannot reach the ARGUS API at ${API_URL}. Is it running?`, 0);
+    }
+    if (!response.ok) {
+      throw new ApiError(await errorMessage(response), response.status);
+    }
+    if (!response.body) {
+      throw new ApiError("The server returned no stream", 0);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // Keep the trailing partial frame in the buffer — a chunk boundary can
+      // land mid-frame, and parsing half a frame loses the event.
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop() ?? "";
+
+      for (const frame of frames) {
+        let event = "message";
+        const data: string[] = [];
+        for (const line of frame.split("\n")) {
+          if (line.startsWith("event: ")) event = line.slice(7).trim();
+          else if (line.startsWith("data: ")) data.push(line.slice(6));
+        }
+        if (!data.length) continue;
+
+        const payload = JSON.parse(data.join("\n"));
+        if (event === "context") {
+          handlers.onContext(payload.conversation_id, payload.citations ?? []);
+        } else if (event === "delta") {
+          handlers.onDelta(payload.text);
+        } else if (event === "error") {
+          handlers.onError(payload.detail);
+        }
+      }
+    }
+  },
 };

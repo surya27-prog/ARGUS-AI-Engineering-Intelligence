@@ -13,15 +13,24 @@ import {
 
 const POLL_MS = 1500;
 
-export default function RepositoryPage({ params }: { params: Promise<{ id: string }> }) {
+export default function RepositoryPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ path?: string }>;
+}) {
   const { id } = use(params);
+  // Set when a citation chip in the chat links here, so the cited file is
+  // filtered to and selected instead of leaving the user to find it.
+  const { path: citedPath } = use(searchParams);
 
   const [repo, setRepo] = useState<Repository | null>(null);
   const [files, setFiles] = useState<SourceFile[]>([]);
   const [symbols, setSymbols] = useState<Symbol[]>([]);
   const [symbolTotal, setSymbolTotal] = useState(0);
   const [selected, setSelected] = useState<SourceFile | null>(null);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(citedPath ?? "");
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -71,6 +80,14 @@ export default function RepositoryPage({ params }: { params: Promise<{ id: strin
       cancelled = true;
     };
   }, [id, selectedId, complete]);
+
+  // Arriving from a citation chip: select the cited file once its row exists,
+  // so the symbol panel shows that file rather than the whole repository.
+  useEffect(() => {
+    if (!citedPath || selected) return;
+    const match = files.find((f) => f.path === citedPath);
+    if (match) setSelected(match);
+  }, [citedPath, files, selected]);
 
   const visibleFiles = search
     ? files.filter((f) => f.path.toLowerCase().includes(search.toLowerCase()))
@@ -122,6 +139,12 @@ export default function RepositoryPage({ params }: { params: Promise<{ id: strin
         {repo.error_message && <p className="error">{repo.error_message}</p>}
         <p style={{ marginBottom: 0 }}>
           <Link href="/">← All repositories</Link>
+          {repo.status === "complete" && (
+            <>
+              {" · "}
+              <Link href={`/repos/${id}/chat`}>Ask about this codebase →</Link>
+            </>
+          )}
         </p>
       </section>
 
