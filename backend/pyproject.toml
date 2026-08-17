@@ -14,6 +14,8 @@ dependencies = [
     "neo4j>=5.26",
     # Required by FastAPI to accept the multipart zip upload on POST /repos/upload.
     "python-multipart>=0.0.20",
+    "anthropic>=0.122.0",
+    "openai>=3.1.0",
 ]
 
 [dependency-groups]

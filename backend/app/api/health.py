@@ -16,6 +16,13 @@ class HealthResponse(BaseModel):
     version: str
     postgres: str
     neo4j: str
+    # Which providers are selected and whether they have credentials. Reported
+    # from config rather than by calling them: a liveness probe should not make
+    # a billable request every time it runs.
+    llm_provider: str
+    embedding_provider: str
+    llm_configured: bool
+    embedding_configured: bool
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -37,4 +44,8 @@ def health(
         version="0.1.0",
         postgres=postgres,
         neo4j=check_connectivity(),
+        llm_provider=settings.llm_provider,
+        embedding_provider=settings.embedding_provider,
+        llm_configured=settings.has_chat_credentials,
+        embedding_configured=settings.has_embedding_credentials,
     )

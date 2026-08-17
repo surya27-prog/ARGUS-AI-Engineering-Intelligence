@@ -43,6 +43,36 @@ class Settings(BaseSettings):
     max_repo_size_mb: int = 500
     parse_timeout_seconds: int = 900
 
+    # LLM — chat and embeddings are selected independently. Anthropic has no
+    # embeddings endpoint, so `llm_provider=anthropic` still needs one of the
+    # embedding providers configured below.
+    llm_provider: str = "anthropic"
+    # Anthropic's cost/quality dial. It replaces `temperature`, which is not a
+    # parameter on current models — sending it returns a 400.
+    llm_effort: str = "high"
+    llm_timeout_seconds: float = 120.0
+
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-opus-5"
+
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o"
+
+    # Embeddings
+    embedding_provider: str = "openai"
+    openai_embedding_model: str = "text-embedding-3-small"
+    # Must match the model above — Qdrant creates the collection with this
+    # width, and a mismatch rejects every write rather than erroring at startup.
+    embedding_dimensions: int = 1536
+
+    @property
+    def has_chat_credentials(self) -> bool:
+        return self.llm_provider == "stub" or bool(self.anthropic_api_key)
+
+    @property
+    def has_embedding_credentials(self) -> bool:
+        return self.embedding_provider == "hash" or bool(self.openai_api_key)
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
