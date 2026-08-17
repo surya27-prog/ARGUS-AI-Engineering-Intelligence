@@ -33,8 +33,14 @@ class SearchHit:
     qualname: str | None = None
     name: str | None = None
     module: str | None = None
-    # The Neo4j node key. Day 4 expands from here into callers and callees.
+    # The Neo4j node key, which hybrid retrieval expands from.
     symbol_key: str | None = None
+    # How this hit was found. `vector` came back from the embedding search;
+    # `graph` was pulled in by expanding a vector hit's call neighbourhood, and
+    # would not have been retrieved by similarity alone.
+    source: str = "vector"
+    hops: int = 0
+    via: str | None = None
 
     @property
     def citation(self) -> str:

@@ -272,6 +272,43 @@ def _traverse(
     return root, items
 
 
+def neighbours(
+    repository_id: UUID | str, keys: list[str], *, depth: int = 1, limit: int = 200
+) -> list[dict[str, Any]]:
+    """Symbols within `depth` CALLS hops of any of `keys`, in either direction.
+
+    Both directions on purpose. Callees answer "how does this work" — the
+    machinery a retrieved function delegates to. Callers answer "what uses
+    this" — the context that explains why it exists. A vector search finds one
+    symbol; the question usually spans its neighbourhood.
+    """
+    if not keys or not 1 <= depth <= MAX_DEPTH:
+        return []
+
+    repo_id = str(repository_id)
+    # Interpolated for the same reason as the traversals above: Cypher rejects
+    # a parameter as a variable-length bound. `depth` is range-checked first.
+    cypher = f"""
+    MATCH (seed) WHERE seed.key IN $keys
+    MATCH path = (seed)-[:CALLS*1..{depth}]-(other)
+    WHERE other.repo_id = $repo_id AND NOT other.key IN $keys
+    WITH other,
+         length(path) AS hops,
+         reduce(c = 1.0, r IN relationships(path) | c * coalesce(r.confidence, 1.0)) AS confidence,
+         seed.key AS seed_key
+    ORDER BY hops ASC, confidence DESC
+    WITH other, collect({{hops: hops, confidence: confidence, seed: seed_key}})[0] AS best
+    RETURN other.key AS key, best.hops AS hops, best.confidence AS confidence,
+           best.seed AS via_key
+    ORDER BY hops ASC, confidence DESC
+    LIMIT $limit
+    """
+
+    with graph_session() as session:
+        records = list(session.run(cypher, keys=keys, repo_id=repo_id, limit=limit))
+    return [dict(record) for record in records]
+
+
 def _escape_regex(value: str) -> str:
     """Neutralise regex metacharacters in user input before it reaches `=~`."""
     return "".join(f"\\{c}" if c in ".^$*+?()[]{}|\\/" else c for c in value)
