@@ -376,6 +376,22 @@ A uniqueness constraint creates its own index, so `key` needs no separate one.
 These are Friday's endpoints, written out now so the schema can be checked
 against them rather than discovered to be wrong on Friday.
 
+**Amended on Day 5 — the draft below does not compile, and finding that out on
+Monday was the point.** `[:CALLS|IMPORTS*1..$depth]` is a syntax error:
+Cypher cannot take a variable-length bound from a parameter, and Neo4j rejects
+it with `Parameter maps cannot be used in MATCH patterns`. Depth is therefore
+interpolated into the query text as a literal, which is only safe because the
+router validates it as an `int` in `1..MAX_DEPTH` before it reaches the query.
+
+Two further corrections the real implementation needed:
+
+- **One row per node, not per path.** The draft returns a row per path, so a
+  symbol reachable five ways appears five times. The shipped query keeps the
+  strongest shortest path per node and collapses the rest.
+- **`CONTAINS` is not traversed.** Only `CALLS` and `IMPORTS` are dependencies.
+  Including containment would make every symbol in a file "depend on" every one
+  of its siblings.
+
 **`GET /repos/{id}/graph`** — the whole structure, capped for rendering:
 
 ```cypher
