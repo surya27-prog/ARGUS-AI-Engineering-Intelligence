@@ -7,7 +7,6 @@ FastAPI or SQLAlchemy, and the API knows nothing about ASTs.
 from __future__ import annotations
 
 import logging
-import sys
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,15 +18,8 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.models import ParseStatus, Repository, SourceFile, Symbol
-
-# The parser is a sibling package, not a published distribution. Week 6 turns it
-# into a real editable install; until then the backend puts it on the path here,
-# in the one module that imports it.
-_PARSER_DIR = Path(__file__).resolve().parents[3] / "parser"
-if str(_PARSER_DIR) not in sys.path:
-    sys.path.insert(0, str(_PARSER_DIR))
-
-from parser import IngestError, ParsedRepo, analyze_repo  # noqa: E402
+from app.services.graph_writer import write_parsed_repo
+from parser import IngestError, ParsedRepo, analyze_repo
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -66,6 +58,16 @@ def parse_repository(repository_id: UUID, source: str) -> None:
             return
 
         store_parse_result(db, repository, parsed)
+
+        # The graph is a required output from Week 2 on, so a failure here is a
+        # failed parse rather than a warning: reporting "complete" for a repo
+        # with no graph would make every dependency endpoint return an empty
+        # result with nothing to explain why.
+        try:
+            write_parsed_repo(repository.id, parsed)
+        except Exception as exc:  # noqa: BLE001 - recorded on the row, not raised
+            logger.exception("Graph write failed for repository %s", repository_id)
+            _fail(db, repository, f"graph write failed — {type(exc).__name__}: {exc}")
 
 
 def store_parse_result(db: Session, repository: Repository, parsed: ParsedRepo) -> None:

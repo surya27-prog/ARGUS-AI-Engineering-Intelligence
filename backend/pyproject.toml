@@ -11,6 +11,7 @@ dependencies = [
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.2",
     "alembic>=1.14",
+    "neo4j>=5.26",
     # Required by FastAPI to accept the multipart zip upload on POST /repos/upload.
     "python-multipart>=0.0.20",
 ]
@@ -31,6 +32,13 @@ select = ["E", "F", "I", "UP", "B"]
 # B008 flags function calls in argument defaults, which is exactly how FastAPI
 # declares dependencies (`db: Session = Depends(get_db)`).
 ignore = ["B008"]
+
+[tool.ruff.lint.isort]
+# `parser` is the sibling package in this repo, not the long-dead stdlib module
+# of the same name. Grouping it with `app` also keeps it sorted *after* `app`,
+# which matters: the path bootstrap that makes it importable lives in
+# `app/services/__init__.py`.
+known-first-party = ["app", "parser"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

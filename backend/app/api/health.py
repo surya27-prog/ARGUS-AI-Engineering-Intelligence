@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
+from app.core.graph import check_connectivity
 
 router = APIRouter(tags=["health"])
 
@@ -14,6 +15,7 @@ class HealthResponse(BaseModel):
     environment: str
     version: str
     postgres: str
+    neo4j: str
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -21,7 +23,7 @@ def health(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> HealthResponse:
-    """Liveness check. Reports Postgres connectivity but stays 200 either way,
+    """Liveness check. Reports store connectivity but stays 200 either way,
     so the endpoint is usable as a container liveness probe."""
     try:
         db.execute(text("SELECT 1"))
@@ -34,4 +36,5 @@ def health(
         environment=settings.app_env,
         version="0.1.0",
         postgres=postgres,
+        neo4j=check_connectivity(),
     )

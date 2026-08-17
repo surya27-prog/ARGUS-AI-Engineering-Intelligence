@@ -1,15 +1,29 @@
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import health, repos
 from app.core.config import get_settings
+from app.core.graph import close_driver
 
 settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
+    yield
+    # The Neo4j driver holds a connection pool; Postgres' is torn down by
+    # SQLAlchemy's own atexit handling.
+    close_driver()
+
 
 app = FastAPI(
     title="ARGUS API",
     description="AI Engineering Intelligence Platform",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(

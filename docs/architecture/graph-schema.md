@@ -136,7 +136,7 @@ files pull them in" a one-line query, which Week 5's debt report wants.
 
 | Type | From → To | Properties | Meaning |
 |---|---|---|---|
-| `CONTAINS` | `Repo → File`<br>`File → Class`<br>`File → Function`<br>`Class → Function`<br>`Function → Function` | — | Lexical containment. The last form is a nested definition. |
+| `CONTAINS` | `Repo → File`<br>`File → Class`<br>`File → Function`<br>`Class → Function`<br>`Function → Function` | `run_id` | Lexical containment. The last form is a nested definition. |
 | `IMPORTS` | `File → File`<br>`File → Module` | `line`, `alias`, `level`, `is_relative`, `resolution` | One edge per import *statement target*. |
 | `CALLS` | `Function → Function` | `lines`, `count`, `resolution`, `confidence` | Aggregated: one edge per caller/callee pair, not per call site. |
 | `INHERITS` | `Class → Class` | `position`, `resolution` | `position` preserves MRO order. |
@@ -153,6 +153,13 @@ the symbol count rather than in the line count.
 one traversal (`CONTAINS*`) instead of a union of differently-named edges. Where
 a query needs the specific shape it filters on the node labels, which Neo4j
 indexes anyway.
+
+**The `CONTAINS` endpoint pairs above are the common ones, not the closed set.**
+The writer reads the enclosing symbol's label rather than assuming it, so a class
+nested in a class (`Class → Class`) or in a function (`Function → Class`) — both
+legal Python — produce edges too. A symbol whose enclosing scope was never
+extracted as a symbol of its own, such as a `def` inside an `if` block, hangs off
+its `:File` instead, so it stays reachable rather than being dropped.
 
 ---
 
@@ -188,7 +195,22 @@ mod:{repo_id}:{dotted_name}
 ```
 
 `module` may be empty for a file outside any package; the colons still separate
-the fields, so `sym:abc-123::helper` is well-formed and unambiguous.
+the fields, so `sym:abc-123::helper` is well-formed.
+
+**Amended on Day 2 — it is well-formed but not unambiguous.** Two unpackaged
+files that each define `helper` produce the same key, and `MERGE` would collapse
+two unrelated functions into one node, inventing call and containment edges
+between them. So the symbol scope falls back to the file path when the module is
+absent:
+
+```
+sym:{repo_id}:{module or path}:{qualname}
+sym:abc-123:scripts/tool.py:helper
+```
+
+Packaged files are unaffected, since a module path is already unique per file.
+`app.services.graph_keys` is the only place a key is built, so this rule cannot
+drift between the writer and the passes that look nodes up.
 
 ### Re-parsing: stamp and sweep
 

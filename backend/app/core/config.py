@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     neo4j_user: str = "neo4j"
     neo4j_password: str = "argus_dev_password"
     neo4j_database: str = "neo4j"
+    # Seconds to wait for a Neo4j connection. The driver's default is 60s,
+    # which would hang a request rather than report the graph as down.
+    neo4j_timeout_seconds: int = 5
 
     # Qdrant
     qdrant_url: str = "http://localhost:6333"
