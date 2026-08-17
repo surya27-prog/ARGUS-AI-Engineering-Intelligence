@@ -184,3 +184,105 @@ Week 2, Day 1 — branch `deepu_branch`
   is checked against its real queries now rather than on Friday
 
 ---
+
+## Monday, 17 August 2026 at 10:33 (UTC-04:00)
+
+Week 2, Days 2-3 — branch `deepu_branch`
+
+- Day 2 `ef91904`: Neo4j driver + graph writer — `:Repo`/`:File`/`:Class`/
+  `:Function` nodes and the `CONTAINS` tree, batched `UNWIND ... MERGE` on the
+  node key, stamp-and-sweep per `run_id`
+- Driver is built lazily so importing it cannot stop the API starting when
+  Neo4j is down; `/health` now reports Neo4j and the pool closes on shutdown
+- Symbol keys fall back to the file path outside a package — the schema doc
+  allowed an empty module, which would have fused two unrelated `helper`
+  functions into one node. Amendment written into the doc
+- Parser path bootstrap moved to `app/services/__init__.py`, now two modules
+  need it
+- Day 3 `d4ad76c`: import resolution — `IMPORTS` edges and the first `:Module`
+  nodes, resolution as a pure function in `import_resolver.py`
+- Relative imports resolve against the importing file's package; a package's
+  `__init__.py` is the package, so one fewer component comes off it
+- Over-deep relative imports recorded as external with their literal text
+- Second schema-doc amendment: `internal_symbol` does not verify the trailing
+  name is an extracted symbol, since module-level variables are not extracted
+- Verified against `psf/requests`: 37 files, 591 import refs → 90 relative,
+  20 internal_symbol, 8 internal_module, 207 external; `sessions.py`
+  spot-checked correct. Re-parsed twice, nothing swept
+- 65 backend + 64 parser tests green
+- Found and fixed a pre-existing problem: the Postgres volume was one migration
+  behind head, so `source_files` and `symbols` did not exist and 7 Week 1 tests
+  were failing. `alembic upgrade head` applied
+- Docker Desktop crashes on startup on its Inference manager (unix socket at a
+  Windows path). Worked around by restarting, not fixed — `EnableDockerAI` is
+  still true
+- Not done: `parser/uv.lock` left untracked; nothing pushed
+
+---
+
+## Monday, 17 August 2026 at 11:50 (UTC-04:00)
+
+Week 2, Days 4-7 — branch `deepu_branch`
+
+- Day 4 `01fe2fa`: call graph and inheritance — four confidence tiers, `CALLS`
+  aggregated per pair, `INHERITS` resolved first because `attribute_self` needs
+  the hierarchy
+- Running Day 4 against `psf/requests` found three things: `CALLS` must be able
+  to target a `:Class` (constructor calls were being dropped silently),
+  re-exports need following (`requests/__init__.py` does `from .api import get`
+  — worth 275 call sites), and ambiguity is 7 sites out of 2510, so the
+  deferred fan-out idea was closed rather than built
+- Day 5 `0998c0e`: graph query API — `/graph`, `/graph/search`,
+  `/dependencies`, `/dependents`
+- Day 1's draft Cypher does not compile: `*1..$depth` is a syntax error, Cypher
+  cannot parameterise a variable-length bound. Depth is now an interpolated
+  literal validated as a bounded int. Writing that Cypher a week early is what
+  made this cheap
+- Day 6 `d83917c`: `parse_jobs` table, migration `a1b08af925a7`. The job's
+  `run_id` is the graph's stamp, so a Postgres row names the subgraph it wrote
+- Fixed a bug this week introduced: `DELETE /repos/{id}` left the whole Neo4j
+  subgraph orphaned
+- Day 7 `6608d4e`: ran the week's demo against a real uvicorn server, which
+  found a bug TestClient cannot — it runs background tasks before returning, so
+  the pipeline looked atomic. The repository was marked `complete` before the
+  graph write, so a poller could reach an empty `/dependents`. `complete` is now
+  published in the same commit as the finished job
+- Updated `docs/architecture/overview.md` to end of Week 2
+- Tagged `v0.1-parser` (Week 1, was outstanding) and `v0.2-graph`
+- Week 2 demo verified end to end on `psf/requests`: 202 in ~210ms, parsing →
+  complete, 937 nodes and 1929 relationships, re-parse sweeps nothing,
+  dependents of `Session.request` is exactly its seven HTTP verb methods,
+  DELETE clears both stores
+- 132 backend + 64 parser tests green, ruff clean, migrations at head
+- Not done: nothing pushed — all of Week 2 is local; `parser/uv.lock` still
+  untracked; Week 1 demo recording still outstanding
+
+---
+
+## Monday, 17 August 2026 at 12:04 (UTC-04:00)
+
+Week 3, Day 1 — branch `deepu_branch`
+
+- `0fe0ced`: two provider interfaces, `ChatProvider` and `EmbeddingProvider`,
+  selected by `LLM_PROVIDER` and `EMBEDDING_PROVIDER` independently
+- Anthropic chat provider on the official SDK; OpenAI embedding provider;
+  `stub` and `hash` providers that run offline with no key
+- No `temperature` on the chat interface — it was removed on current Claude
+  models and returns a 400. `effort` is the supported control, and a test
+  asserts the parameter cannot creep back in
+- A refusal is an HTTP 200 with empty content, so `ChatResponse` carries
+  `stop_reason` and a `refused` property
+- `EmbeddingBatch` carries its model and width; the OpenAI provider refuses to
+  construct when the model's real width disagrees with `EMBEDDING_DIMENSIONS`
+- Token counting is on the interface, since tokenizers are provider-specific
+- `/health` reports the selected providers and whether they have credentials,
+  read from config rather than by calling them
+- `.env.example` was advertising `ollama` and a local embedding provider that
+  were never implemented — removed, `LLM_EFFORT` added
+- 156 backend tests green, all offline; swapped both providers by env var and
+  exercised complete, stream, count_tokens, embed and check
+- Not done: no API keys set yet, so neither real provider has been called.
+  Day 2 needs an `OPENAI_API_KEY` (or a local embedding provider) to fill
+  Qdrant. Nothing pushed; `parser/uv.lock` still untracked
+
+---
