@@ -33,8 +33,14 @@ def repository(db: Session) -> Generator[Repository, None, None]:
     db.add(repo)
     db.commit()
     db.refresh(repo)
+    repository_id = repo.id
     try:
         yield repo
     finally:
-        db.delete(repo)
-        db.commit()
+        # Re-fetched rather than deleted directly: a test may have deleted the
+        # row itself, and a stale instance would make teardown fail instead of
+        # the assertion that matters.
+        db.expire_all()
+        if (existing := db.get(Repository, repository_id)) is not None:
+            db.delete(existing)
+            db.commit()

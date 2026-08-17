@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models import ParseStatus
+from app.models import JobStatus, ParseStatus
 
 T = TypeVar("T")
 
@@ -87,6 +87,35 @@ class SymbolOut(BaseModel):
     decorators: list[str]
     parameters: list[ParameterOut]
     base_classes: list[str]
+
+
+class ParseJobOut(BaseModel):
+    """One parse run. `run_id` is the stamp on the graph the run produced."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    run_id: UUID
+    source: str | None
+    status: JobStatus
+    error_message: str | None
+    failed_stage: str | None = Field(default=None, description="ingest | parse | store | graph")
+
+    file_count: int
+    symbol_count: int
+    import_count: int
+    call_count: int
+    failed_file_count: int
+
+    graph_nodes: int
+    graph_relationships: int
+    graph_nodes_deleted: int
+    graph_relationships_deleted: int
+
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    duration_ms: int | None
 
 
 class Page(BaseModel, Generic[T]):

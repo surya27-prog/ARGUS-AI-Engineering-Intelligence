@@ -7,17 +7,18 @@ FastAPI or SQLAlchemy, and the API knows nothing about ASTs.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal
-from app.models import ParseStatus, Repository, SourceFile, Symbol
+from app.models import JobStatus, ParseJob, ParseStatus, Repository, SourceFile, Symbol
 from app.services.graph_writer import write_parsed_repo
 from parser import IngestError, ParsedRepo, analyze_repo
 
@@ -29,7 +30,10 @@ def parse_repository(repository_id: UUID, source: str) -> None:
     """Parse `source` and store the result against `repository_id`.
 
     Runs in a background task, so it owns its session and swallows every
-    exception into the repository row — there is no request left to raise into.
+    exception into the job and repository rows — there is no request left to
+    raise into. Every run creates a `ParseJob`, including the ones that fail
+    immediately: a run that left no trace is indistinguishable from one that
+    never started.
     """
     with SessionLocal() as db:
         repository = db.get(Repository, repository_id)
@@ -37,9 +41,19 @@ def parse_repository(repository_id: UUID, source: str) -> None:
             logger.warning("Parse requested for unknown repository %s", repository_id)
             return
 
+        job = ParseJob(
+            repository_id=repository.id,
+            run_id=uuid4(),
+            source=source,
+            status=JobStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(job)
         repository.status = ParseStatus.PARSING
         repository.error_message = None
         db.commit()
+
+        started = time.perf_counter()
 
         try:
             parsed = analyze_repo(
@@ -50,24 +64,67 @@ def parse_repository(repository_id: UUID, source: str) -> None:
                 force=True,
             )
         except IngestError as exc:
-            _fail(db, repository, str(exc))
+            _fail(db, repository, job, str(exc), stage="ingest", started=started)
             return
         except Exception as exc:  # noqa: BLE001 - recorded on the row, not raised
             logger.exception("Parse failed for repository %s", repository_id)
-            _fail(db, repository, f"{type(exc).__name__}: {exc}")
+            _fail(
+                db,
+                repository,
+                job,
+                f"{type(exc).__name__}: {exc}",
+                stage="parse",
+                started=started,
+            )
             return
 
-        store_parse_result(db, repository, parsed)
+        job.file_count = parsed.inventory.file_count
+        job.symbol_count = parsed.symbol_count
+        job.import_count = parsed.import_count
+        job.call_count = parsed.call_count
+        job.failed_file_count = len(parsed.failed_files)
+
+        try:
+            store_parse_result(db, repository, parsed)
+        except Exception as exc:  # noqa: BLE001 - recorded on the row, not raised
+            logger.exception("Storing the parse failed for repository %s", repository_id)
+            _fail(
+                db,
+                repository,
+                job,
+                f"{type(exc).__name__}: {exc}",
+                stage="store",
+                started=started,
+            )
+            return
 
         # The graph is a required output from Week 2 on, so a failure here is a
         # failed parse rather than a warning: reporting "complete" for a repo
         # with no graph would make every dependency endpoint return an empty
         # result with nothing to explain why.
         try:
-            write_parsed_repo(repository.id, parsed)
+            # The job's run_id is the graph's stamp, which is what lets a row
+            # here name the exact subgraph it produced.
+            result = write_parsed_repo(repository.id, parsed, run_id=str(job.run_id))
         except Exception as exc:  # noqa: BLE001 - recorded on the row, not raised
             logger.exception("Graph write failed for repository %s", repository_id)
-            _fail(db, repository, f"graph write failed — {type(exc).__name__}: {exc}")
+            _fail(
+                db,
+                repository,
+                job,
+                f"graph write failed — {type(exc).__name__}: {exc}",
+                stage="graph",
+                started=started,
+            )
+            return
+
+        job.graph_nodes = result.nodes_written
+        job.graph_relationships = result.relationships_written
+        job.graph_nodes_deleted = result.nodes_deleted
+        job.graph_relationships_deleted = result.relationships_deleted
+        job.status = JobStatus.COMPLETE
+        _finish(job, started)
+        db.commit()
 
 
 def store_parse_result(db: Session, repository: Repository, parsed: ParsedRepo) -> None:
@@ -128,7 +185,25 @@ def store_parse_result(db: Session, repository: Repository, parsed: ParsedRepo) 
     db.commit()
 
 
-def _fail(db: Session, repository: Repository, message: str) -> None:
+def _fail(
+    db: Session,
+    repository: Repository,
+    job: ParseJob,
+    message: str,
+    *,
+    stage: str,
+    started: float,
+) -> None:
+    """Record a failure on both rows: the repo's current state and the run's history."""
     repository.status = ParseStatus.FAILED
     repository.error_message = message
+    job.status = JobStatus.FAILED
+    job.error_message = message
+    job.failed_stage = stage
+    _finish(job, started)
     db.commit()
+
+
+def _finish(job: ParseJob, started: float) -> None:
+    job.finished_at = datetime.now(UTC)
+    job.duration_ms = int((time.perf_counter() - started) * 1000)
