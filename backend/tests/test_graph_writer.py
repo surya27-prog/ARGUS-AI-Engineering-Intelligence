@@ -14,16 +14,18 @@ from uuid import uuid4
 import pytest
 
 from app.core.graph import graph_session
-from app.services.graph_keys import file_key, repo_key, symbol_key, top_level
+from app.services.graph_keys import file_key, module_key, repo_key, symbol_key, top_level
 from app.services.graph_writer import (
     _contains_rows,
     _node_rows,
     count_nodes,
+    count_relationships,
     delete_repo_graph,
     write_parsed_repo,
 )
 from parser.models import (
     FileInfo,
+    ImportRef,
     Language,
     ParsedFile,
     ParsedRepo,
@@ -329,6 +331,104 @@ def test_containment_path_reaches_a_method_from_the_repo(repo_id: str):
             key=repo_key(repo_id),
         ).single()
     assert record["total"] == 1
+
+
+# --- imports, against a real Neo4j ------------------------------------------
+
+
+def _importing_repo(*, keep_external: bool = True) -> ParsedRepo:
+    """`app/api/health.py` importing one internal module and one package.
+
+    `keep_external=False` drops the third-party import, which is what the
+    import sweep test needs.
+    """
+    internal = ImportRef(module="app.core.config", name="Settings", line=4, is_from=True)
+    relative = ImportRef(module="core.config", name="get_settings", line=5, level=2, is_from=True)
+    external = ImportRef(module="fastapi", line=1)
+
+    health_imports = (external, internal, relative) if keep_external else (internal, relative)
+    files = (
+        ParsedFile(path="app/__init__.py", module="app"),
+        ParsedFile(path="app/core/__init__.py", module="app.core"),
+        ParsedFile(path="app/core/config.py", module="app.core.config"),
+        ParsedFile(path="app/api/__init__.py", module="app.api"),
+        ParsedFile(path="app/api/health.py", module="app.api.health", imports=health_imports),
+    )
+    inventory = RepoInventory(
+        name="fixture",
+        root="/tmp/fixture",
+        source_kind=SourceKind.LOCAL,
+        files=tuple(_file_info(f.path, f.module) for f in files),
+    )
+    return ParsedRepo(inventory=inventory, files=files)
+
+
+def test_imports_create_edges_to_files_and_modules(repo_id: str):
+    write_parsed_repo(repo_id, _importing_repo())
+
+    assert count_nodes(repo_id)["Module"] == 1
+    assert count_relationships(repo_id) == {
+        "internal_symbol": 1,
+        "relative": 1,
+        "external": 1,
+    }
+
+
+def test_an_internal_import_points_at_the_defining_file(repo_id: str):
+    write_parsed_repo(repo_id, _importing_repo())
+
+    with graph_session() as session:
+        record = session.run(
+            """
+            MATCH (:File {key: $source})-[r:IMPORTS]->(t:File)
+            RETURN t.path AS path, r.resolution AS resolution, r.line AS line
+            ORDER BY line
+            """,
+            source=file_key(repo_id, "app/api/health.py"),
+        ).data()
+
+    assert record == [
+        {"path": "app/core/config.py", "resolution": "internal_symbol", "line": 4},
+        {"path": "app/core/config.py", "resolution": "relative", "line": 5},
+    ]
+
+
+def test_the_external_module_node_records_its_installable_name(repo_id: str):
+    write_parsed_repo(repo_id, _importing_repo())
+
+    with graph_session() as session:
+        record = session.run(
+            "MATCH (m:Module {key: $key}) RETURN m.dotted_name AS dotted, "
+            "m.top_level AS top, m.is_external AS external",
+            key=module_key(repo_id, "fastapi"),
+        ).single()
+
+    assert record["dotted"] == "fastapi"
+    assert record["top"] == "fastapi"
+    assert record["external"] is True
+
+
+def test_import_edges_are_not_duplicated_by_a_second_write(repo_id: str):
+    parsed = _importing_repo()
+    write_parsed_repo(repo_id, parsed)
+    first = count_relationships(repo_id)
+
+    result = write_parsed_repo(repo_id, parsed)
+
+    assert count_relationships(repo_id) == first
+    assert result.relationships_deleted == 0
+    assert result.nodes_deleted == 0
+
+
+def test_sweep_removes_an_import_that_disappeared(repo_id: str):
+    write_parsed_repo(repo_id, _importing_repo())
+
+    result = write_parsed_repo(repo_id, _importing_repo(keep_external=False))
+
+    # The :Module node goes with it — nothing imports fastapi any more.
+    assert result.nodes_deleted == 1
+    assert count_nodes(repo_id)["Module"] == 0
+    assert "external" not in count_relationships(repo_id)
 
 
 def test_delete_repo_graph_removes_everything(repo_id: str):

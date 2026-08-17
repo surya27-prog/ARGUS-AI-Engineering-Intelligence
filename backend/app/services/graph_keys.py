@@ -35,5 +35,10 @@ def module_key(repo_id: UUID | str, dotted_name: str) -> str:
 
 
 def top_level(dotted_name: str) -> str:
-    """`os.path` -> `os` — what you would pip install."""
-    return dotted_name.split(".", 1)[0]
+    """`os.path` -> `os` — what you would pip install.
+
+    An over-deep relative import is recorded as external with its literal text,
+    so the leading dots have to come off first or `..core.config` would report
+    an empty package name.
+    """
+    return dotted_name.lstrip(".").split(".", 1)[0] or dotted_name

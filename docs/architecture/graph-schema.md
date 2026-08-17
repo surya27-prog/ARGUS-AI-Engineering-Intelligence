@@ -257,6 +257,14 @@ edge records **how** it was resolved.
 | `relative` | resolved by walking `level` dots up from the importing file's package | `:File` |
 | `external` | no match in the repo | `:Module` |
 
+**Amended on Day 3.** `internal_symbol` does not verify that the trailing name
+is an extracted symbol. The parser does not extract module-level variables or
+re-exports, so a name that fails that check is as likely to be a constant as a
+mistake — and the file-level dependency is real either way. The rule the
+resolver actually applies is therefore about modules, not symbols: try the
+deeper `module.name` as a module first (`from app.core import config` is a
+module import, not a symbol import); fall back to `module`; then to external.
+
 Relative imports resolve against the *importing file's* module path, not the
 repo root. `from ..core.config import get_settings` inside `app/api/health.py`
 walks up two levels from `app.api` to `app`, giving `app.core.config`. An

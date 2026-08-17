@@ -22,7 +22,8 @@ from uuid import UUID, uuid4
 from neo4j import ManagedTransaction, Session
 
 from app.core.graph import ensure_schema, graph_session
-from app.services.graph_keys import file_key, repo_key, symbol_key
+from app.services.graph_keys import file_key, module_key, repo_key, symbol_key, top_level
+from app.services.import_resolver import ResolvedImport, resolve_imports
 from parser import ParsedRepo
 
 logger = logging.getLogger(__name__)
@@ -66,8 +67,12 @@ def write_parsed_repo(
     repo_id = str(repository_id)
     run = run_id or str(uuid4())
 
+    imports = resolve_imports(parsed)
+
     nodes = _node_rows(repo_id, parsed, run)
+    nodes["Module"] = _module_rows(repo_id, imports, run)
     edges = _contains_rows(repo_id, parsed)
+    import_edges = _imports_rows(repo_id, imports)
 
     ensure_schema()
 
@@ -82,6 +87,13 @@ def write_parsed_repo(
         for (parent_label, child_label), rows in edges.items():
             for batch in _batched(rows, BATCH_SIZE):
                 session.execute_write(_merge_contains, parent_label, child_label, batch, run)
+                relationships_written += len(batch)
+
+        # Imports are written after the nodes because both endpoints have to
+        # exist for the MATCH to find them — external :Module nodes included.
+        for target_label, rows in import_edges.items():
+            for batch in _batched(rows, BATCH_SIZE):
+                session.execute_write(_merge_imports, target_label, batch, run)
                 relationships_written += len(batch)
 
         nodes_deleted, relationships_deleted = sweep_run(session, repo_id, run)
@@ -180,6 +192,55 @@ def _node_rows(repo_id: str, parsed: ParsedRepo, run: str) -> dict[str, list[dic
     return {label: batch for label, batch in rows.items() if batch}
 
 
+def _module_rows(repo_id: str, imports: Sequence[ResolvedImport], run: str) -> list[dict]:
+    """One `:Module` node per distinct external package this repo imports.
+
+    Internal modules deliberately get no node: in Python an internal module *is*
+    a file, so `IMPORTS` points straight at the `:File`. See the schema doc.
+    """
+    rows: dict[str, dict] = {}
+    for entry in imports:
+        dotted = entry.target_module
+        if not dotted or dotted in rows:
+            continue
+        rows[dotted] = {
+            "key": module_key(repo_id, dotted),
+            "repo_id": repo_id,
+            "dotted_name": dotted,
+            "top_level": top_level(dotted),
+            "is_external": True,
+            "run_id": run,
+        }
+    return list(rows.values())
+
+
+def _imports_rows(repo_id: str, imports: Sequence[ResolvedImport]) -> dict[str, list[dict]]:
+    """`IMPORTS` edges, grouped by target label so each MATCH hits an index."""
+    edges: dict[str, list[dict]] = {"File": [], "Module": []}
+
+    for entry in imports:
+        if entry.is_internal:
+            target_label = "File"
+            target = file_key(repo_id, entry.target_path)
+        else:
+            target_label = "Module"
+            target = module_key(repo_id, entry.target_module)
+
+        edges[target_label].append(
+            {
+                "source": file_key(repo_id, entry.source_path),
+                "target": target,
+                "line": entry.line,
+                "alias": entry.alias,
+                "level": entry.level,
+                "is_relative": entry.is_relative,
+                "resolution": str(entry.resolution),
+            }
+        )
+
+    return {label: rows for label, rows in edges.items() if rows}
+
+
 def _contains_rows(repo_id: str, parsed: ParsedRepo) -> dict[tuple[str, str], list[dict]]:
     """Containment edges, grouped by endpoint labels so each MATCH hits an index."""
     edges: dict[tuple[str, str], list[dict]] = {}
@@ -270,6 +331,30 @@ def _merge_contains(
     )
 
 
+def _merge_imports(
+    tx: ManagedTransaction, target_label: str, rows: Sequence[dict], run: str
+) -> None:
+    # `line` is part of the MERGE pattern, not just a property: a file that
+    # imports the same target twice is two import statements and stays two
+    # edges. Without it the second write would silently overwrite the first's
+    # line and alias.
+    tx.run(
+        f"""
+        UNWIND $rows AS row
+        MATCH (source:File {{key: row.source}})
+        MATCH (target:{target_label} {{key: row.target}})
+        MERGE (source)-[r:IMPORTS {{line: row.line}}]->(target)
+        SET r.alias = row.alias,
+            r.level = row.level,
+            r.is_relative = row.is_relative,
+            r.resolution = row.resolution,
+            r.run_id = $run
+        """,
+        rows=list(rows),
+        run=run,
+    )
+
+
 def sweep_run(session: Session, repo_id: str, run: str) -> tuple[int, int]:
     """Delete everything in this repo that `run` did not stamp.
 
@@ -333,6 +418,23 @@ def count_nodes(repository_id: UUID | str) -> dict[str, int]:
             ).single()
             counts[label] = record["total"] if record else 0
     return counts
+
+
+def count_relationships(repository_id: UUID | str, rel_type: str = "IMPORTS") -> dict[str, int]:
+    """Relationship count per `resolution` for one repo. Tests and the Day 5 API.
+
+    `CONTAINS` carries no resolution, so it reports under a single `null` key.
+    """
+    repo_id = str(repository_id)
+    with graph_session() as session:
+        records = session.run(
+            f"""
+            MATCH (n:File {{repo_id: $repo_id}})-[r:{rel_type}]->()
+            RETURN coalesce(r.resolution, 'none') AS resolution, count(r) AS total
+            """,
+            repo_id=repo_id,
+        ).data()
+    return {record["resolution"]: record["total"] for record in records}
 
 
 def _batched(rows: Sequence[dict], size: int) -> Iterator[list[dict]]:
