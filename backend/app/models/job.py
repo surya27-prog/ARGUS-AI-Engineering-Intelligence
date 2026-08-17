@@ -49,9 +49,7 @@ class ParseJob(Base):
     )
 
     source: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[JobStatus] = mapped_column(
-        String(20), nullable=False, default=JobStatus.PENDING
-    )
+    status: Mapped[JobStatus] = mapped_column(String(20), nullable=False, default=JobStatus.PENDING)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Which stage failed — `ingest`, `parse`, `store`, `graph` or `vectors`. A
     # failure message alone does not say whether there is usable data behind it.
@@ -70,6 +68,12 @@ class ParseJob(Base):
     graph_relationships: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     graph_nodes_deleted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     graph_relationships_deleted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # What the history pass did. `commits_analyzed` is 0 both when the source
+    # has no git history at all (a zip upload) and when the pass failed — the
+    # log says which, and neither is a failed parse.
+    commits_analyzed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cochange_edges: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # What the embedding pass did. `embedding_model` is NULL when the pass was
     # skipped — which is the normal state without an embedding key, and has to

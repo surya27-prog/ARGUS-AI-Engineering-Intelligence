@@ -80,6 +80,10 @@ def serialize_node(node: Node) -> dict[str, Any]:
         "line_end": props.get("line_end"),
         "is_external": props.get("is_external"),
         "unresolved_calls": props.get("unresolved_calls"),
+        # Commits that touched this file in the history window. Absent until
+        # the co-change pass has run, and absent forever on a source with no
+        # git history — which is why it is None rather than 0 by default.
+        "change_count": props.get("change_count"),
     }
 
 
@@ -97,9 +101,7 @@ def get_node(repository_id: UUID | str, key: str) -> dict[str, Any]:
     return serialize_node(record["n"])
 
 
-def search_nodes(
-    repository_id: UUID | str, query: str, *, limit: int = 25
-) -> list[dict[str, Any]]:
+def search_nodes(repository_id: UUID | str, query: str, *, limit: int = 25) -> list[dict[str, Any]]:
     """Find nodes by name, path or qualname.
 
     The dependency endpoints take a node key, and a key is not something anyone

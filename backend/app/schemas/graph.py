@@ -22,6 +22,9 @@ class GraphNode(BaseModel):
     line_end: int | None = None
     is_external: bool | None = None
     unresolved_calls: int | None = None
+    change_count: int | None = Field(
+        default=None, description="Commits touching this file, once history has been read"
+    )
 
 
 class GraphEdge(BaseModel):

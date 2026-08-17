@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.models import JobStatus, ParseJob, ParseStatus, Repository, SourceFile, Symbol
+from app.services.cochange import ingest_history
 from app.services.graph_writer import write_parsed_repo
 from app.services.vector_writer import write_repo_vectors
 from parser import IngestError, ParsedRepo, analyze_repo
@@ -63,6 +64,10 @@ def parse_repository(repository_id: UUID, source: str) -> None:
                 max_size_mb=settings.max_repo_size_mb,
                 timeout_seconds=settings.parse_timeout_seconds,
                 force=True,
+                # A clone has to bring the commits down before anything can read
+                # them; Week 1's depth-1 clone would leave co-change with a
+                # single commit and nothing to pair.
+                history_depth=settings.history_depth,
             )
         except IngestError as exc:
             _fail(db, repository, job, str(exc), stage="ingest", started=started)
@@ -124,6 +129,17 @@ def parse_repository(repository_id: UUID, source: str) -> None:
         job.graph_relationships = result.relationships_written
         job.graph_nodes_deleted = result.nodes_deleted
         job.graph_relationships_deleted = result.relationships_deleted
+
+        # Co-change is an enrichment on top of a graph that is already correct
+        # without it, and half the sources that reach here — zips, exported
+        # directories — have no history to read at all. So a failure is logged
+        # and the parse continues, unlike the graph write above.
+        try:
+            coupling = ingest_history(repository.id, parsed, run_id=str(job.run_id))
+            job.commits_analyzed = coupling.commits_used
+            job.cochange_edges = coupling.edges_written
+        except Exception:  # noqa: BLE001 - an enrichment, not a required output
+            logger.exception("Co-change analysis failed for repository %s", repository_id)
 
         # Embedding is skipped without credentials rather than failing the
         # parse. Weeks 1-2 are fully useful with no embedding provider — files,

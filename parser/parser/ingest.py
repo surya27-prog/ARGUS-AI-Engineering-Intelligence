@@ -23,6 +23,12 @@ DEFAULT_WORKSPACE = Path("./workspace")
 DEFAULT_MAX_SIZE_MB = 500
 DEFAULT_TIMEOUT_SECONDS = 900
 
+# How many commits a clone brings down. Week 1 cloned at depth 1 because only
+# the current tree was needed; Week 4's co-change analysis reads the log, and a
+# depth-1 clone has exactly one commit in it, so every pair count would be zero.
+# Deep enough to see a real pattern, shallow enough not to fetch a decade.
+DEFAULT_HISTORY_DEPTH = 500
+
 _GIT_URL = re.compile(r"^(https?://|git@|ssh://|git://)")
 # Repo names become directory names and Neo4j node keys; keep them boring.
 _UNSAFE_NAME_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
@@ -86,18 +92,20 @@ def ingest(
     max_size_mb: int = DEFAULT_MAX_SIZE_MB,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     force: bool = False,
+    history_depth: int = DEFAULT_HISTORY_DEPTH,
 ) -> IngestedRepo:
     """Stage `source` for parsing and describe where it landed.
 
     `force` replaces an existing staging directory of the same name; without it
-    a previously cloned repo is reused as-is.
+    a previously cloned repo is reused as-is. `history_depth` is how many
+    commits a clone fetches — co-change analysis reads them.
     """
     kind = classify_source(source)
     name = derive_name(source, kind)
     workspace = Path(workspace_dir).expanduser().resolve()
 
     if kind is SourceKind.GIT:
-        repo = _clone(source, workspace / name, name, timeout_seconds, force)
+        repo = _clone(source, workspace / name, name, timeout_seconds, force, history_depth)
     elif kind is SourceKind.ZIP:
         repo = _unzip(Path(source), workspace / name, name, force)
     else:
@@ -145,12 +153,19 @@ def remove_tree(path: Path) -> None:
     shutil.rmtree(path, **handler)
 
 
-def _clone(url: str, dest: Path, name: str, timeout_seconds: int, force: bool) -> IngestedRepo:
+def _clone(
+    url: str,
+    dest: Path,
+    name: str,
+    timeout_seconds: int,
+    force: bool,
+    history_depth: int = DEFAULT_HISTORY_DEPTH,
+) -> IngestedRepo:
     if _prepare_dest(dest, force):
-        # Shallow clone: ARGUS only needs the current tree in Week 1. Week 4's
-        # co-change analysis will need real history and can unshallow then.
-        _run_git(
-            ["clone", "--depth", "1", url, str(dest)],
+        # Still shallow, just not depth 1: the tree is what the parser reads and
+        # the commits behind it are what co-change analysis reads.
+        run_git(
+            ["clone", "--depth", str(history_depth), url, str(dest)],
             timeout_seconds=timeout_seconds,
             failure=f"git clone of {url} failed",
         )
@@ -164,7 +179,9 @@ def _clone(url: str, dest: Path, name: str, timeout_seconds: int, force: bool) -
     )
 
 
-def _run_git(args: list[str], *, timeout_seconds: int, failure: str) -> str:
+def run_git(args: list[str], *, timeout_seconds: int, failure: str) -> str:
+    """Run one git command and return its stdout. Public so `parser.history` can
+    read a staged repo's log through the same error handling."""
     try:
         result = subprocess.run(  # noqa: S603 - args are built here, never shell-interpolated
             ["git", *args],
@@ -185,7 +202,7 @@ def _run_git(args: list[str], *, timeout_seconds: int, failure: str) -> str:
 def _git_metadata(repo: Path, args: list[str]) -> str | None:
     """Best-effort git lookup — metadata is nice to have, not worth failing over."""
     try:
-        return _run_git(["-C", str(repo), *args], timeout_seconds=30, failure="git query failed")
+        return run_git(["-C", str(repo), *args], timeout_seconds=30, failure="git query failed")
     except IngestError:
         return None
 

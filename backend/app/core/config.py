@@ -44,6 +44,16 @@ class Settings(BaseSettings):
     max_repo_size_mb: int = 500
     parse_timeout_seconds: int = 900
 
+    # Git history / co-change. `history_depth` is how many commits a clone
+    # fetches and `history_max_commits` how many are read back; the clone is the
+    # binding limit, so raising the second alone changes nothing.
+    history_depth: int = 500
+    history_max_commits: int = 500
+    # A commit touching more parsed files than this is a refactor, not a
+    # coupling signal — see parser.history.
+    cochange_max_files_per_commit: int = 40
+    cochange_min_commits: int = 2
+
     # LLM — chat and embeddings are selected independently. Anthropic has no
     # embeddings endpoint, so `llm_provider=anthropic` still needs one of the
     # embedding providers configured below.

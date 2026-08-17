@@ -76,6 +76,7 @@ repo root, exactly as `FileInfo.path` records it.
 | `line_count` | int | |
 | `sha256` | string | lets a re-parse skip unchanged files later |
 | `parse_error` | string? | set when the file failed to parse |
+| `change_count` | int? | commits touching this file in the history window; absent until the co-change pass has run, and on sources with no git history |
 | `run_id` | string | |
 
 ### `:Class`
@@ -140,6 +141,7 @@ files pull them in" a one-line query, which Week 5's debt report wants.
 | `IMPORTS` | `File → File`<br>`File → Module` | `line`, `alias`, `level`, `is_relative`, `resolution` | One edge per import *statement target*. |
 | `CALLS` | `Function → Function`<br>`Function → Class` | `lines`, `count`, `resolution`, `confidence` | Aggregated: one edge per caller/callee pair, not per call site. The `:Class` form is a constructor call. |
 | `INHERITS` | `Class → Class` | `position`, `resolution` | `position` preserves MRO order. |
+| `CO_CHANGED` | `File → File` | `commits`, `jaccard`, `left_commits`, `right_commits`, `last_together` | Week 4. How often the two files appear in the same commit. Symmetric — see below. |
 
 Two notes on shape:
 
@@ -160,6 +162,21 @@ nested in a class (`Class → Class`) or in a function (`Function → Class`) �
 legal Python — produce edges too. A symbol whose enclosing scope was never
 extracted as a symbol of its own, such as a `def` inside an `if` block, hangs off
 its `:File` instead, so it stays reachable rather than being dropped.
+
+**`CO_CHANGED` is the only edge not derived from the code.** The other four are
+facts about what the source says; this one is a fact about how the source has
+been edited, read from `git log`. That difference has three consequences:
+
+- It is **stored directed and read undirected.** The writer orders each pair
+  lexicographically so a pair cannot be written twice; every query matches
+  `-[:CO_CHANGED]-` without an arrow, because neither file causes the other.
+- It is **excluded from dependency traversals.** `/dependencies`, `/dependents`
+  and `/impact` follow `CALLS|IMPORTS` only. "These change together" is evidence
+  *about* a change, not a dependency — admitting it would put every test file in
+  every blast radius. The risk score is where it carries weight.
+- It is **absent, not zero, when unknown.** A zip upload has no history, so it
+  gets no edges and its files get no `change_count`. Zero would claim the file
+  has never changed.
 
 ---
 
