@@ -52,6 +52,53 @@ def test_a_successful_parse_records_one_complete_job(db: Session, repository: Re
         delete_repo_graph(repository.id)
 
 
+def test_complete_is_published_only_once_the_graph_exists(
+    db: Session, repository: Repository
+):
+    """A poller that sees `complete` must find a graph and a finished job.
+
+    `store_parse_result` used to mark the repository complete before the graph
+    write ran, so a UI polling status raced straight to an empty /dependents.
+    """
+    try:
+        parse_repository(repository.id, str(FIXTURES))
+        db.expire_all()
+
+        repo = db.get(Repository, repository.id)
+        job = _jobs(db, repository)[0]
+
+        assert repo.status == ParseStatus.COMPLETE
+        assert repo.parsed_at is not None
+        # Everything the status implies is already true.
+        assert job.status == JobStatus.COMPLETE
+        assert job.graph_nodes > 0
+        assert job.duration_ms is not None
+        assert sum(count_nodes(repository.id).values()) > 0
+    finally:
+        delete_repo_graph(repository.id)
+
+
+def test_a_graph_failure_leaves_the_repository_failed_not_complete(
+    db: Session, repository: Repository, monkeypatch
+):
+    """Reporting `complete` with no graph would break every graph endpoint."""
+    import app.services.parsing as parsing
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("neo4j is down")
+
+    monkeypatch.setattr(parsing, "write_parsed_repo", boom)
+    parse_repository(repository.id, str(FIXTURES))
+    db.expire_all()
+
+    assert db.get(Repository, repository.id).status == ParseStatus.FAILED
+    job = _jobs(db, repository)[0]
+    assert job.status == JobStatus.FAILED
+    assert job.failed_stage == "graph"
+    # The parse counts survive, so the failure is diagnosable.
+    assert job.file_count > 0
+
+
 def test_the_run_id_names_the_graph_the_job_wrote(db: Session, repository: Repository):
     """The job row is the only bridge from Postgres to the Neo4j subgraph."""
     try:

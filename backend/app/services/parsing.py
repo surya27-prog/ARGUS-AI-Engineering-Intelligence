@@ -85,7 +85,8 @@ def parse_repository(repository_id: UUID, source: str) -> None:
         job.failed_file_count = len(parsed.failed_files)
 
         try:
-            store_parse_result(db, repository, parsed)
+            # Stays `parsing` until the graph exists — see below.
+            store_parse_result(db, repository, parsed, mark_complete=False)
         except Exception as exc:  # noqa: BLE001 - recorded on the row, not raised
             logger.exception("Storing the parse failed for repository %s", repository_id)
             _fail(
@@ -124,11 +125,25 @@ def parse_repository(repository_id: UUID, source: str) -> None:
         job.graph_relationships_deleted = result.relationships_deleted
         job.status = JobStatus.COMPLETE
         _finish(job, started)
+
+        # `complete` is published last, in the same commit as the finished job.
+        # A poller that sees `complete` is guaranteed a written graph and a
+        # populated job row behind it.
+        repository.status = ParseStatus.COMPLETE
+        repository.parsed_at = datetime.now(UTC)
         db.commit()
 
 
-def store_parse_result(db: Session, repository: Repository, parsed: ParsedRepo) -> None:
-    """Replace a repository's parsed rows with a fresh result, atomically."""
+def store_parse_result(
+    db: Session, repository: Repository, parsed: ParsedRepo, *, mark_complete: bool = True
+) -> None:
+    """Replace a repository's parsed rows with a fresh result, atomically.
+
+    `mark_complete=False` leaves the repository in `parsing`, which is what the
+    full pipeline needs: the graph write still has to happen, and a repository
+    that says `complete` before its graph exists sends a polling UI straight to
+    an empty `/dependents`.
+    """
     # Re-parsing is a replace, not a merge: stale paths must not survive.
     db.execute(delete(SourceFile).where(SourceFile.repository_id == repository.id))
 
@@ -179,9 +194,10 @@ def store_parse_result(db: Session, repository: Repository, parsed: ParsedRepo) 
     repository.default_branch = inventory.default_branch
     repository.file_count = inventory.file_count
     repository.symbol_count = parsed.symbol_count
-    repository.status = ParseStatus.COMPLETE
-    repository.parsed_at = datetime.now(UTC)
     repository.error_message = None
+    if mark_complete:
+        repository.status = ParseStatus.COMPLETE
+        repository.parsed_at = datetime.now(UTC)
     db.commit()
 
 

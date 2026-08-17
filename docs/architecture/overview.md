@@ -1,8 +1,13 @@
 # ARGUS — Architecture Overview
 
-**Status:** end of Week 1 (foundation + parser skeleton). This document describes
-what exists today and the seams the later weeks plug into. It is updated as the
-system grows, not rewritten.
+**Status:** end of Week 2 (knowledge graph). This document describes what exists
+today and the seams the later weeks plug into. It is updated as the system
+grows, not rewritten.
+
+The graph's own design — node labels, edge properties, key formats, the
+resolution and confidence model — lives in
+[graph-schema.md](graph-schema.md). This page covers how the pieces fit
+together; that one covers what the graph actually is.
 
 ---
 
@@ -28,8 +33,11 @@ flowchart LR
     end
 
     subgraph api["Backend — FastAPI"]
-        REST["REST endpoints<br/>/repos · /health"]
-        SVC["parsing service"]
+        REST["REST endpoints<br/>/repos · /graph · /health"]
+        SVC["parsing service<br/>+ job history"]
+        RES["resolvers<br/>imports · calls · bases"]
+        GW["graph writer"]
+        GQ["graph queries"]
     end
 
     subgraph parser["parser/ — standalone package"]
@@ -39,7 +47,7 @@ flowchart LR
     end
 
     subgraph data["Data stack — docker compose"]
-        PG[("PostgreSQL<br/>repos · files · symbols")]
+        PG[("PostgreSQL<br/>repos · jobs · files · symbols")]
         NEO[("Neo4j<br/>knowledge graph")]
         QD[("Qdrant<br/>vector index")]
     end
@@ -49,11 +57,12 @@ flowchart LR
     SVC --> ING --> WALK --> EXT
     SVC --> PG
     REST --> PG
-    EXT -.->|Week 2| NEO
+    SVC --> RES --> GW --> NEO
+    REST --> GQ --> NEO
     EXT -.->|Week 3| QD
 ```
 
-Solid arrows exist today. Dotted arrows are the next two weeks.
+Solid arrows exist today. The dotted arrow is Week 3.
 
 ---
 
@@ -76,10 +85,23 @@ and it can be tested without a database.
 
 ### `backend/` — the API
 
-FastAPI + SQLAlchemy 2.0 + Alembic. Configuration comes from the repo-root
-`.env` through a single cached `Settings` object; nothing reads `os.environ`
-directly. `app/services/parsing.py` is the only module that imports the parser,
-which keeps the seam between the two halves in one file.
+FastAPI + SQLAlchemy 2.0 + Alembic + the Neo4j driver. Configuration comes from
+the repo-root `.env` through a single cached `Settings` object; nothing reads
+`os.environ` directly.
+
+| Module | Responsibility |
+|---|---|
+| `services/parsing.py` | The seam to the parser, and the parse job's lifecycle. |
+| `services/import_resolver.py` | `ImportRef` → a file or an external module, with a resolution kind. |
+| `services/call_resolver.py` | Call sites → functions, with a confidence; class bases → `INHERITS`. |
+| `services/graph_writer.py` | `ParsedRepo` → Neo4j, idempotently, with stamp-and-sweep. |
+| `services/graph_queries.py` | Everything read back out: the graph views and the traversals. |
+| `services/graph_keys.py` | The four node key formats, in one place so a key can only be spelled one way. |
+| `core/graph.py` | Driver lifecycle and the constraint/index bootstrap. |
+
+The three resolvers are **pure functions of the parse result** — they import
+nothing from Neo4j. That is what lets the resolution logic, which is where all
+the subtlety lives, be tested without a database at all.
 
 ### `frontend/` — the UI
 
@@ -92,10 +114,10 @@ actually in flight.
 
 Three containers via `docker compose` (see [SETUP.md](../SETUP.md)):
 
-- **PostgreSQL** — repositories, parse status, files, symbols. The flat source of
+- **PostgreSQL** — repositories, parse jobs, files, symbols. The flat source of
   truth that list endpoints read, so browsing never depends on the graph.
-- **Neo4j** — the knowledge graph (Week 2). Nodes for repos, files, modules,
-  classes and functions; edges for `CONTAINS`, `IMPORTS`, `CALLS`, `INHERITS`.
+- **Neo4j** — the knowledge graph. Nodes for repos, files, modules, classes and
+  functions; edges for `CONTAINS`, `IMPORTS`, `CALLS`, `INHERITS`.
 - **Qdrant** — symbol-level embeddings for retrieval (Week 3).
 
 ---
@@ -131,8 +153,46 @@ is unique repo-wide, which makes it usable directly as a graph node key.
 
 **Nothing is resolved.** `from . import config` keeps its relative depth and
 `helper()` stays a bare name. Resolving either requires the whole repository's
-symbol table, which is Week 2's job. Recording the raw text means a re-resolve
+symbol table, which only exists once every file has been walked — so it happens
+on the way into the graph, not here. Recording the raw text means a re-resolve
 never requires re-reading the source.
+
+---
+
+## The knowledge graph
+
+Postgres already answers "what is in this repository". What it is bad at is the
+question ARGUS exists for: *if I change `Session.request`, what breaks?* That is
+a variable-depth reverse traversal over call and import edges — a recursive CTE
+in SQL that becomes unreadable as soon as you want per-hop decay or path
+reconstruction, and one line of Cypher.
+
+Neo4j stores **identity and edges only** — no docstrings, no signatures, no
+source text. Anything needing a symbol's body joins back to Postgres on the key.
+
+Three properties carry the design:
+
+**One deterministic string key per node**, and every write is a `MERGE` on it.
+Composite keys were rejected because Neo4j's `NODE KEY` constraint is an
+Enterprise feature and this runs Community.
+
+**Stamp and sweep.** `MERGE` makes re-parsing non-duplicating but never removes
+anything, so a deleted file would live in the graph forever. Every write carries
+the run's `run_id`, and the run ends by deleting whatever in that repo it did not
+stamp. That gives both idempotence *and* correct removal.
+
+**Resolution records how, not just what.** Import edges carry a resolution kind;
+call edges carry a confidence from 1.0 (a bare name defined in the same file)
+down to 0.85 (`self.method()` resolved through the class hierarchy). Calls that
+cannot be resolved honestly — dynamic dispatch, an attribute on an untypeable
+value, a call into a third-party package — produce **no edge** and are counted on
+the calling function as `unresolved_calls`. Week 4's risk score reads confidence
+as an edge weight, so a graph that admits its uncertainty produces better numbers
+than one that guesses.
+
+On `psf/requests` that yields 917 nodes and roughly 1,400 edges from 37 files,
+with about a third of in-function call sites resolving. The rest are calls out of
+the repository, which have no node to point at.
 
 ---
 
@@ -141,25 +201,34 @@ never requires re-reading the source.
 ```
 POST /repos {url}
   → create Repository row (status=pending), return 202 immediately
-  → background task:
+  → background task, recorded as a ParseJob:
       ingest      clone/extract into WORKSPACE_DIR
       walk        inventory the source files
       extract     AST → symbols, imports, calls
+      resolve     imports → files/modules; calls → functions; bases → classes
       persist     replace this repo's file and symbol rows in one transaction
-      status      → complete (or failed, with the error on the row)
+      graph       MERGE nodes and edges stamped with the job's run_id, then sweep
+      status      → complete (or failed, with the stage and error on the job)
 
 UI polls GET /repos/{id} until the status settles.
 ```
 
 The request returns before the parse begins because a real repository takes
 minutes — far longer than any sensible HTTP timeout. Re-parsing **replaces** a
-repository's rows rather than merging them, so stale paths cannot survive a
-re-parse.
+repository's Postgres rows rather than merging them, and sweeps the graph by
+`run_id`, so stale paths cannot survive either way.
+
+The job row is the bridge between the two stores: its `run_id` is the stamp on
+every node the run wrote, so a Postgres record names the exact subgraph it
+produced. It also records which stage failed — `ingest`, `parse`, `store` or
+`graph` — because an error message alone does not say whether there is usable
+data behind it.
 
 Failure is data, not an exception. A syntax error yields a `ParsedFile` with
 `error` set and the run continues, so one unparseable file costs you that file
-rather than the whole repository. Ingestion failures land on the repository row
-as `status=failed` with a message the UI displays.
+rather than the whole repository. A graph write failure, by contrast, **fails the
+parse**: reporting "complete" for a repository with no graph would make every
+dependency endpoint return an empty result with nothing to explain why.
 
 ---
 
@@ -167,18 +236,30 @@ as `status=failed` with a message the UI displays.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/health` | Liveness. Reports Postgres connectivity but always returns 200, so it is usable as a container probe. |
+| `GET` | `/health` | Liveness. Reports Postgres and Neo4j connectivity but always returns 200, so it is usable as a container probe. |
 | `POST` | `/repos` | Ingest from a git URL. Returns 202. |
 | `POST` | `/repos/upload` | Ingest from a zip archive (multipart). |
 | `GET` | `/repos` | Paginated repository list. |
 | `GET` | `/repos/{id}` | Status and counts — the polling endpoint. |
 | `GET` | `/repos/{id}/files` | Paginated file list, `?search=` by path. |
 | `GET` | `/repos/{id}/symbols` | Paginated symbols, filterable by `file_id`, `kind`, `search`. |
+| `GET` | `/repos/{id}/jobs` | Parse history, newest first. |
+| `GET` | `/repos/{id}/jobs/latest` | The current or most recent run. |
 | `POST` | `/repos/{id}/reparse` | Re-run the parser against the original URL. |
-| `DELETE` | `/repos/{id}` | Remove a repository; files and symbols cascade. |
+| `DELETE` | `/repos/{id}` | Remove a repository; Postgres rows cascade and the subgraph is cleared. |
+| `GET` | `/repos/{id}/graph` | `?view=files` (files + `IMPORTS`) or `?view=calls` (symbols + `CALLS`), capped. |
+| `GET` | `/repos/{id}/graph/search` | Find a node key by name, path or qualname. |
+| `GET` | `/repos/{id}/dependencies` | What a node needs, `?depth=1..5`. |
+| `GET` | `/repos/{id}/dependents` | What needs it — the blast radius. |
 
 List endpoints return `{items, total, limit, offset}`. The `total` is what lets
-the UI say "showing 500 of 807" instead of quietly truncating.
+the UI say "showing 500 of 807" instead of quietly truncating. `/graph` returns
+a `truncated` flag for the same reason.
+
+The traversal endpoints take the node key as a **query parameter**, not a path
+segment: keys look like `file:{uuid}:app/core/config.py`, and those slashes would
+need double-encoding to survive a path segment. `/graph/search` exists because
+those endpoints need a key and nobody types one.
 
 ---
 
@@ -195,13 +276,27 @@ embeddings endpoint, so a single `LLM_PROVIDER` setting would be a dead end.
 (`ChatProvider.complete()`, `EmbeddingProvider.embed()`), each selected by one
 env var.
 
-**Postgres holds the flat facts; Neo4j will hold the relationships.** Listing a
-repository's files should not require the graph to be healthy. The graph answers
+**Postgres holds the flat facts; Neo4j holds the relationships.** Listing a
+repository's files does not require the graph to be healthy. The graph answers
 traversal questions — dependents, blast radius — that SQL is bad at.
 
 **Symbol signatures are stored as JSONB, not child tables.** Nothing queries
 inside a parameter list yet, and Week 3's chunker wants the whole signature back
 in a single read.
+
+**Resolution is separated from writing.** The resolvers are pure functions
+returning plain dataclasses; the writer turns those into Cypher. All the
+difficult logic — relative import depth, method lookup through base classes,
+re-export chains — is therefore testable with no database, and the database
+tests only have to prove the rows land.
+
+**The Neo4j driver is built lazily.** Importing `core/graph.py` must never be
+what stops the API starting, because `/health` has to be able to report the
+graph as *down*.
+
+**Only external modules get a `:Module` node.** In Python an internal module *is*
+a file, so an internal `:Module` would be a node carrying nothing a `:File` does
+not already have, hopped through on every import traversal.
 
 ---
 
@@ -211,10 +306,11 @@ in a single read.
 |---|---|---|
 | Authentication | Week 5 | Adds no demo value; roughly half a day whenever it is wanted. |
 | Multi-language parsing | Possibly never | Python-only is the first scope cut if the schedule slips. The extension point is one extension→language map plus an extractor. |
-| Real background workers | Week 2 | FastAPI `BackgroundTasks` is enough for one parse at a time; it does not survive a restart. |
-| Import and call **resolution** | Week 2 | Needs the full symbol table, and records a confidence per edge. |
-| Persisting imports and calls | Week 2 | They are extracted today but only counted in Postgres; they land in Neo4j where they are actually useful. |
-| Performance work | Week 5 | Correctness first. Target is a 1000-file repo parsed in under 5 minutes. |
+| Real background workers | Week 5 | FastAPI `BackgroundTasks` is enough for one parse at a time and does not survive a restart. `ParseJob` rows now exist to be picked up by a real queue whenever one is worth adding. |
+| Type inference | Not planned | `self.client.get()` cannot be resolved without knowing the type of `self.client`. The confidence model exists precisely so this gap is countable rather than hidden. |
+| Graph visualisation | Week 4 | `/graph` returns the nodes and edges; Cytoscape renders them. |
+| Co-change edges | Week 4 | `CO_CHANGES` between `:File` nodes, from `git log`. Nothing in the schema blocks them. |
+| Performance work | Week 5 | Correctness first. Target is a 1000-file repo parsed in under 5 minutes. The sweep touches every node in a repo and is the first thing to profile. |
 
 ---
 
