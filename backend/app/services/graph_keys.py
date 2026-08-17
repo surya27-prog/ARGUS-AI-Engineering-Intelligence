@@ -34,6 +34,17 @@ def module_key(repo_id: UUID | str, dotted_name: str) -> str:
     return f"mod:{repo_id}:{dotted_name}"
 
 
+def external_class_key(repo_id: UUID | str, name: str) -> str:
+    """A base class ARGUS could not resolve inside the repo.
+
+    `external` is a reserved scope segment rather than an empty one: it can
+    never collide with a real module or path, so `BaseSettings` imported into
+    ten files is one node, which is what makes "everything inheriting from
+    BaseSettings" answerable.
+    """
+    return f"sym:{repo_id}:external:{name}"
+
+
 def top_level(dotted_name: str) -> str:
     """`os.path` -> `os` — what you would pip install.
 

@@ -138,7 +138,7 @@ files pull them in" a one-line query, which Week 5's debt report wants.
 |---|---|---|---|
 | `CONTAINS` | `Repo → File`<br>`File → Class`<br>`File → Function`<br>`Class → Function`<br>`Function → Function` | `run_id` | Lexical containment. The last form is a nested definition. |
 | `IMPORTS` | `File → File`<br>`File → Module` | `line`, `alias`, `level`, `is_relative`, `resolution` | One edge per import *statement target*. |
-| `CALLS` | `Function → Function` | `lines`, `count`, `resolution`, `confidence` | Aggregated: one edge per caller/callee pair, not per call site. |
+| `CALLS` | `Function → Function`<br>`Function → Class` | `lines`, `count`, `resolution`, `confidence` | Aggregated: one edge per caller/callee pair, not per call site. The `:Class` form is a constructor call. |
 | `INHERITS` | `Class → Class` | `position`, `resolution` | `position` preserves MRO order. |
 
 Two notes on shape:
@@ -294,6 +294,26 @@ Partial resolution is the expected outcome, not a failure: the Week 4 risk score
 reads `confidence` as an edge weight, so a graph that is honest about its
 uncertainty produces better numbers than one that guesses.
 
+**Amended on Day 4**, three ways, all found by running the pass against
+`psf/requests`:
+
+1. **`CALLS` can target a `:Class`.** `Settings()` is a constructor call and a
+   real dependency; restricting the edge to `:Function` would drop it silently,
+   because the MATCH simply would not find the node. The edge is still only ever
+   *from* a `:Function` — a call at module scope has no function to hang it on
+   and is counted separately as `module_level`.
+2. **Re-exports are followed, up to two hops.** A name a file imports rather
+   than defines resolves through that import. This is the pattern every Python
+   package uses — `requests/__init__.py` contains `from .api import get`, so
+   `requests.get()` names a function that appears nowhere in `__init__.py`.
+   Without it the resolver misses the entire public API of every package it
+   looks at: on `requests` this alone was the difference between 508 and 783
+   resolved call sites.
+3. **A third of in-function call sites resolve, and that is the correct
+   number.** The rest are calls out of the repository — builtins, third-party
+   packages, and attributes on values ARGUS cannot type. They have no node to
+   point at, so an edge would be a fabrication.
+
 ### `INHERITS`
 
 Base classes are matched by name against classes in the same file, then against
@@ -301,6 +321,26 @@ names imported into that file, then repo-wide. A base that resolves to nothing �
 `Protocol`, `BaseSettings`, anything from a dependency — creates a `:Class` node
 with `is_external: true`. Keeping it means "everything inheriting from
 `BaseSettings`" still works, which is a question people actually ask.
+
+**Amended on Day 4.** External base classes need a key, and the symbol format
+has no module or path to build one from. They use a reserved scope segment,
+which can never collide with a real module or file path:
+
+```
+sym:{repo_id}:external:{name}
+```
+
+That makes `BaseSettings` one node however many files inherit from it, which is
+the whole point of keeping unresolved bases at all. Two further details from the
+implementation: a subscripted base drops its type parameters (`Generic[T]` is
+`Generic` — the subscript is not part of the identity), and `position` is part
+of the `MERGE` pattern, since a class can legally list the same base twice and
+MRO order is the reason the property exists.
+
+`INHERITS` was built on Day 4 rather than Day 3 because `attribute_self` call
+resolution needs the hierarchy: `self.method()` is looked up on the enclosing
+class *and its in-repo bases*, so the base map has to exist before calls
+resolve. The walk is depth-bounded — a malformed hierarchy can be cyclic.
 
 ---
 
@@ -396,10 +436,11 @@ property. They are noted now so nothing in this design blocks them.
 
 ## Open questions
 
-- **Ambiguous call sites.** Currently dropped. If the unresolved count turns out
-  to be large on the fixture repo, the alternative is edges to every candidate at
-  reduced confidence (`1 / candidates`) — measurable on Day 4, so defer the call
-  until there are numbers.
+- **Ambiguous call sites — settled on Day 4: keep dropping them.** The fallback
+  was an edge to every candidate at `1 / candidates` confidence. Not worth
+  building: on `psf/requests` ambiguity accounts for **7 call sites out of
+  2,510**, three tenths of one percent. Fanning those out would add speculative
+  paths to every downstream blast radius for no measurable gain.
 - **Method resolution through external bases.** A method inherited from a
   third-party class cannot be resolved. Falls out as `unresolved`; acceptable
   unless the fixture repo shows it dominating.

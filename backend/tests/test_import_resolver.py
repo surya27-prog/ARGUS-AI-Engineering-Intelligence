@@ -15,7 +15,9 @@ import pytest
 
 from app.services.import_resolver import (
     ImportResolution,
+    bindings_for_file,
     build_module_index,
+    dedupe_edges,
     resolve_imports,
 )
 from parser.models import (
@@ -201,7 +203,11 @@ def test_relative_import_of_a_missing_module_is_external():
 
 
 def test_one_line_importing_two_names_from_one_module_is_one_edge():
-    """`from app.core.config import Settings, get_settings` is one dependency."""
+    """`from app.core.config import Settings, get_settings` is one dependency.
+
+    Two bindings, though — the call resolver needs both, so the collapse happens
+    at the edge, not at resolution.
+    """
     resolved = resolve_imports(
         _repo(
             {
@@ -214,7 +220,46 @@ def test_one_line_importing_two_names_from_one_module_is_one_edge():
             }
         )
     )
-    assert len(resolved) == 1
+    assert len(resolved) == 2
+    assert len(dedupe_edges(resolved)) == 1
+
+
+def test_both_names_stay_available_as_bindings():
+    resolved = resolve_imports(
+        _repo(
+            {
+                "app/api/health.py": (
+                    ImportRef(module="app.core.config", name="Settings", line=4, is_from=True),
+                    ImportRef(
+                        module="app.core.config", name="get_settings", line=4, is_from=True
+                    ),
+                )
+            }
+        )
+    )
+    bindings = bindings_for_file(resolved, "app/api/health.py")
+    assert set(bindings) == {"Settings", "get_settings"}
+    assert bindings["Settings"].target_path == "app/core/config.py"
+
+
+def test_an_alias_binds_the_alias_not_the_original_name():
+    resolved = resolve_imports(
+        _repo(
+            {
+                "app/api/health.py": (
+                    ImportRef(
+                        module="app.core.config",
+                        name="get_settings",
+                        alias="factory",
+                        line=4,
+                        is_from=True,
+                    ),
+                )
+            }
+        )
+    )
+    binding = bindings_for_file(resolved, "app/api/health.py")["factory"]
+    assert binding.imported_name == "get_settings"
 
 
 def test_two_names_resolving_to_different_files_stay_two_edges():
@@ -228,7 +273,7 @@ def test_two_names_resolving_to_different_files_stay_two_edges():
             }
         )
     )
-    assert len(resolved) == 2
+    assert len(dedupe_edges(resolved)) == 2
 
 
 def test_the_same_target_on_two_lines_stays_two_edges():
@@ -242,7 +287,7 @@ def test_the_same_target_on_two_lines_stays_two_edges():
             }
         )
     )
-    assert len(resolved) == 2
+    assert len(dedupe_edges(resolved)) == 2
 
 
 def test_alias_is_carried_onto_the_edge():

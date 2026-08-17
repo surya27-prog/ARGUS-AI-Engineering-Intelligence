@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -44,6 +45,11 @@ class ResolvedImport:
     alias: str | None = None
     target_path: str | None = None
     target_module: str | None = None
+    # The name this import introduces into the importing file's namespace, and
+    # the name it was imported *as* in the target. Day 4's call resolver reads
+    # both to turn `config.get_settings()` back into a symbol.
+    bound_name: str = ""
+    imported_name: str | None = None
 
     @property
     def is_relative(self) -> bool:
@@ -66,26 +72,55 @@ def build_module_index(parsed: ParsedRepo) -> dict[str, str]:
 
 
 def resolve_imports(parsed: ParsedRepo) -> list[ResolvedImport]:
-    """Resolve every import in the repo against its own module table."""
-    index = build_module_index(parsed)
-    resolved: list[ResolvedImport] = []
-    # `from x import a, b` is two ImportRefs on one line. When both land on the
-    # same target they are one dependency, and the graph MERGEs on (pair, line)
-    # anyway, so collapse them here to keep the counts predictable.
-    seen: set[tuple[str, str | None, str | None, int]] = set()
+    """Resolve every import in the repo against its own module table.
 
-    for parsed_file in parsed.files:
-        for ref in parsed_file.imports:
-            entry = _resolve_one(ref, parsed_file, index)
-            fingerprint = (entry.source_path, entry.target_path, entry.target_module, entry.line)
-            if fingerprint in seen:
-                continue
-            seen.add(fingerprint)
-            resolved.append(entry)
+    Every `ImportRef` is returned, including the several a single
+    `from x import a, b` produces — each one binds a different name, and Day 4's
+    call resolver needs all of them. Collapsing to one edge per dependency is
+    `dedupe_edges`, applied on the way into the graph rather than here.
+    """
+    index = build_module_index(parsed)
+    resolved = [
+        _resolve_one(ref, parsed_file, index)
+        for parsed_file in parsed.files
+        for ref in parsed_file.imports
+    ]
 
     counts = Counter(str(entry.resolution) for entry in resolved)
     logger.info("Resolved %d imports: %s", len(resolved), dict(counts))
     return resolved
+
+
+def dedupe_edges(imports: Sequence[ResolvedImport]) -> list[ResolvedImport]:
+    """One entry per (source, target, line) — the graph's view of an import.
+
+    `from x import a, b` is two bindings but one dependency, and the graph
+    MERGEs on (pair, line) anyway, so collapsing here keeps the edge count
+    predictable instead of leaving it to whichever row happens to be written
+    second.
+    """
+    seen: set[tuple[str, str | None, str | None, int]] = set()
+    edges: list[ResolvedImport] = []
+    for entry in imports:
+        fingerprint = (entry.source_path, entry.target_path, entry.target_module, entry.line)
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        edges.append(entry)
+    return edges
+
+
+def bindings_for_file(imports: Sequence[ResolvedImport], path: str) -> dict[str, ResolvedImport]:
+    """`bound name -> import` for one file, which is what a call site looks up.
+
+    A name bound twice keeps the *last* binding, matching Python: the second
+    import statement is what the name refers to by the time anything runs.
+    """
+    return {
+        entry.bound_name: entry
+        for entry in imports
+        if entry.source_path == path and entry.bound_name
+    }
 
 
 def _resolve_one(
@@ -182,6 +217,8 @@ def _internal(
         level=ref.level,
         alias=ref.alias,
         target_path=path,
+        bound_name=ref.bound_name,
+        imported_name=ref.name,
     )
 
 
@@ -193,4 +230,6 @@ def _external(ref: ImportRef, parsed_file: ParsedFile, dotted: str) -> ResolvedI
         level=ref.level,
         alias=ref.alias,
         target_module=dotted or ref.target,
+        bound_name=ref.bound_name,
+        imported_name=ref.name,
     )

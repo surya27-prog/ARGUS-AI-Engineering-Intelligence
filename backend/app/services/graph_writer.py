@@ -22,8 +22,16 @@ from uuid import UUID, uuid4
 from neo4j import ManagedTransaction, Session
 
 from app.core.graph import ensure_schema, graph_session
-from app.services.graph_keys import file_key, module_key, repo_key, symbol_key, top_level
-from app.services.import_resolver import ResolvedImport, resolve_imports
+from app.services.call_resolver import CallGraph, SymbolRef, resolve_call_graph
+from app.services.graph_keys import (
+    external_class_key,
+    file_key,
+    module_key,
+    repo_key,
+    symbol_key,
+    top_level,
+)
+from app.services.import_resolver import ResolvedImport, dedupe_edges, resolve_imports
 from parser import ParsedRepo
 
 logger = logging.getLogger(__name__)
@@ -68,11 +76,17 @@ def write_parsed_repo(
     run = run_id or str(uuid4())
 
     imports = resolve_imports(parsed)
+    call_graph = resolve_call_graph(parsed, imports)
 
-    nodes = _node_rows(repo_id, parsed, run)
+    nodes = _node_rows(repo_id, parsed, run, call_graph.unresolved_by_caller)
     nodes["Module"] = _module_rows(repo_id, imports, run)
+    # External base classes are :Class nodes this repo never defines, so they
+    # are appended to the label the resolved classes already write.
+    nodes.setdefault("Class", []).extend(_external_class_rows(repo_id, call_graph, run))
     edges = _contains_rows(repo_id, parsed)
-    import_edges = _imports_rows(repo_id, imports)
+    import_edges = _imports_rows(repo_id, dedupe_edges(imports))
+    call_edges = _calls_rows(repo_id, call_graph)
+    inherit_edges = _inherits_rows(repo_id, call_graph)
 
     ensure_schema()
 
@@ -95,6 +109,15 @@ def write_parsed_repo(
             for batch in _batched(rows, BATCH_SIZE):
                 session.execute_write(_merge_imports, target_label, batch, run)
                 relationships_written += len(batch)
+
+        for target_label, rows in call_edges.items():
+            for batch in _batched(rows, BATCH_SIZE):
+                session.execute_write(_merge_calls, target_label, batch, run)
+                relationships_written += len(batch)
+
+        for batch in _batched(inherit_edges, BATCH_SIZE):
+            session.execute_write(_merge_inherits, batch, run)
+            relationships_written += len(batch)
 
         nodes_deleted, relationships_deleted = sweep_run(session, repo_id, run)
 
@@ -121,8 +144,14 @@ def write_parsed_repo(
 # --- row building -----------------------------------------------------------
 
 
-def _node_rows(repo_id: str, parsed: ParsedRepo, run: str) -> dict[str, list[dict]]:
+def _node_rows(
+    repo_id: str,
+    parsed: ParsedRepo,
+    run: str,
+    unresolved: dict[tuple[str, str], int] | None = None,
+) -> dict[str, list[dict]]:
     """Turn a parse result into one list of property maps per label."""
+    unresolved = unresolved or {}
     inventory = parsed.inventory
     rows: dict[str, list[dict]] = {
         "Repo": [
@@ -179,9 +208,11 @@ def _node_rows(repo_id: str, parsed: ParsedRepo, run: str) -> dict[str, list[dic
                     "kind": str(symbol.kind),
                     "is_async": symbol.is_async,
                     "param_count": len(symbol.parameters),
-                    # Day 4 overwrites this from the call-graph pass; it is
-                    # initialised here so the property always exists.
-                    "unresolved_calls": 0,
+                    # Call sites in this body that resolved to nothing. Zero
+                    # when the call-graph pass found none, never absent.
+                    "unresolved_calls": unresolved.get(
+                        (parsed_file.path, symbol.qualname), 0
+                    ),
                 }
             else:
                 # Day 3 creates `is_external: true` classes for unresolvable
@@ -241,6 +272,65 @@ def _imports_rows(repo_id: str, imports: Sequence[ResolvedImport]) -> dict[str, 
     return {label: rows for label, rows in edges.items() if rows}
 
 
+def _symbol_ref_key(repo_id: str, ref: SymbolRef) -> str:
+    return symbol_key(repo_id, ref.module, ref.qualname, ref.path)
+
+
+def _external_class_rows(repo_id: str, graph: CallGraph, run: str) -> list[dict]:
+    """`:Class` nodes for bases that resolve to nothing inside the repo."""
+    rows: dict[str, dict] = {}
+    for entry in graph.bases:
+        name = entry.external_name
+        if not name or name in rows:
+            continue
+        rows[name] = {
+            "key": external_class_key(repo_id, name),
+            "repo_id": repo_id,
+            "module": None,
+            "qualname": name,
+            "name": name.rsplit(".", 1)[-1],
+            "line_start": 0,
+            "line_end": 0,
+            "is_external": True,
+            "run_id": run,
+        }
+    return list(rows.values())
+
+
+def _calls_rows(repo_id: str, graph: CallGraph) -> dict[str, list[dict]]:
+    """`CALLS` edges — one per caller/callee pair, grouped by the callee's label."""
+    rows: dict[str, list[dict]] = {}
+    for edge in graph.edges:
+        rows.setdefault(edge.callee.label, []).append(
+            {
+                "source": _symbol_ref_key(repo_id, edge.caller),
+                "target": _symbol_ref_key(repo_id, edge.callee),
+                "lines": list(edge.lines),
+                "count": edge.count,
+                "resolution": str(edge.resolution),
+                "confidence": edge.confidence,
+            }
+        )
+    return rows
+
+
+def _inherits_rows(repo_id: str, graph: CallGraph) -> list[dict]:
+    """`INHERITS` edges, internal and external bases alike."""
+    return [
+        {
+            "source": _symbol_ref_key(repo_id, entry.subclass),
+            "target": (
+                _symbol_ref_key(repo_id, entry.base)
+                if entry.base is not None
+                else external_class_key(repo_id, entry.external_name or "")
+            ),
+            "position": entry.position,
+            "resolution": entry.resolution,
+        }
+        for entry in graph.bases
+    ]
+
+
 def _contains_rows(repo_id: str, parsed: ParsedRepo) -> dict[tuple[str, str], list[dict]]:
     """Containment edges, grouped by endpoint labels so each MATCH hits an index."""
     edges: dict[tuple[str, str], list[dict]] = {}
@@ -296,8 +386,9 @@ def _contains_rows(repo_id: str, parsed: ParsedRepo) -> dict[tuple[str, str], li
 # --- Cypher -----------------------------------------------------------------
 #
 # Labels are interpolated into these statements because Cypher cannot
-# parameterise a label. Every value comes from the module constants above, never
-# from parsed input, so there is nothing user-controlled in the query text.
+# parameterise a label. Every value is either a module constant above or derived
+# from a `SymbolKind` enum member — never a string out of the parsed source — so
+# there is nothing user-controlled in the query text.
 
 
 def _merge_nodes(tx: ManagedTransaction, label: str, rows: Sequence[dict]) -> None:
@@ -348,6 +439,47 @@ def _merge_imports(
             r.level = row.level,
             r.is_relative = row.is_relative,
             r.resolution = row.resolution,
+            r.run_id = $run
+        """,
+        rows=list(rows),
+        run=run,
+    )
+
+
+def _merge_calls(
+    tx: ManagedTransaction, target_label: str, rows: Sequence[dict], run: str
+) -> None:
+    # No line in the MERGE pattern here, unlike IMPORTS: CALLS is aggregated, so
+    # one edge per pair is the point and the individual lines ride along as a
+    # list property.
+    tx.run(
+        f"""
+        UNWIND $rows AS row
+        MATCH (source:Function {{key: row.source}})
+        MATCH (target:{target_label} {{key: row.target}})
+        MERGE (source)-[r:CALLS]->(target)
+        SET r.lines = row.lines,
+            r.count = row.count,
+            r.resolution = row.resolution,
+            r.confidence = row.confidence,
+            r.run_id = $run
+        """,
+        rows=list(rows),
+        run=run,
+    )
+
+
+def _merge_inherits(tx: ManagedTransaction, rows: Sequence[dict], run: str) -> None:
+    # `position` is in the MERGE pattern because a class can legally inherit the
+    # same base twice in different positions, and MRO order is the point of
+    # storing it at all.
+    tx.run(
+        """
+        UNWIND $rows AS row
+        MATCH (source:Class {key: row.source})
+        MATCH (target:Class {key: row.target})
+        MERGE (source)-[r:INHERITS {position: row.position}]->(target)
+        SET r.resolution = row.resolution,
             r.run_id = $run
         """,
         rows=list(rows),
@@ -420,16 +552,22 @@ def count_nodes(repository_id: UUID | str) -> dict[str, int]:
     return counts
 
 
+# Which label a relationship type leaves from, so the count query can filter on
+# an indexed repo_id rather than scanning every node.
+_SOURCE_LABEL = {"IMPORTS": "File", "CALLS": "Function", "INHERITS": "Class"}
+
+
 def count_relationships(repository_id: UUID | str, rel_type: str = "IMPORTS") -> dict[str, int]:
     """Relationship count per `resolution` for one repo. Tests and the Day 5 API.
 
-    `CONTAINS` carries no resolution, so it reports under a single `null` key.
+    `CONTAINS` carries no resolution, so it reports under a single `none` key.
     """
     repo_id = str(repository_id)
+    source_label = _SOURCE_LABEL.get(rel_type, "File")
     with graph_session() as session:
         records = session.run(
             f"""
-            MATCH (n:File {{repo_id: $repo_id}})-[r:{rel_type}]->()
+            MATCH (n:{source_label} {{repo_id: $repo_id}})-[r:{rel_type}]->()
             RETURN coalesce(r.resolution, 'none') AS resolution, count(r) AS total
             """,
             repo_id=repo_id,

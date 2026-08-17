@@ -24,6 +24,7 @@ from app.services.graph_writer import (
     write_parsed_repo,
 )
 from parser.models import (
+    CallRef,
     FileInfo,
     ImportRef,
     Language,
@@ -55,6 +56,7 @@ def _symbol(
     path: str,
     module: str | None,
     parent: str | None = None,
+    bases: tuple[str, ...] = (),
 ) -> Symbol:
     return Symbol(
         name=name,
@@ -65,6 +67,7 @@ def _symbol(
         line_end=5,
         module=module,
         parent=parent,
+        base_classes=bases,
     )
 
 
@@ -429,6 +432,130 @@ def test_sweep_removes_an_import_that_disappeared(repo_id: str):
     assert result.nodes_deleted == 1
     assert count_nodes(repo_id)["Module"] == 0
     assert "external" not in count_relationships(repo_id)
+
+
+# --- calls and inheritance, against a real Neo4j -----------------------------
+
+
+def _calling_repo(*, keep_call: bool = True) -> ParsedRepo:
+    """A class with a base, a method calling a sibling, and one dead-end call."""
+    path = "app/models.py"
+    calls = [
+        CallRef(callee="self.validate", line=12, caller="Repo.save", file_path=path),
+        CallRef(callee="self.validate", line=15, caller="Repo.save", file_path=path),
+        CallRef(callee="mystery.thing", line=18, caller="Repo.save", file_path=path),
+    ]
+    if not keep_call:
+        calls = [calls[-1]]
+
+    files = (
+        ParsedFile(
+            path=path,
+            module="app.models",
+            symbols=(
+                _symbol("Base", "Base", SymbolKind.CLASS, path, "app.models"),
+                _symbol(
+                    "Repo", "Repo", SymbolKind.CLASS, path, "app.models", bases=("Base", "Mixin")
+                ),
+                _symbol("save", "Repo.save", SymbolKind.METHOD, path, "app.models", "Repo"),
+                _symbol("validate", "Repo.validate", SymbolKind.METHOD, path, "app.models", "Repo"),
+            ),
+            calls=tuple(calls),
+        ),
+    )
+    inventory = RepoInventory(
+        name="fixture",
+        root="/tmp/fixture",
+        source_kind=SourceKind.LOCAL,
+        files=tuple(_file_info(f.path, f.module) for f in files),
+    )
+    return ParsedRepo(inventory=inventory, files=files)
+
+
+def test_calls_are_written_as_one_aggregated_edge(repo_id: str):
+    write_parsed_repo(repo_id, _calling_repo())
+
+    with graph_session() as session:
+        record = session.run(
+            """
+            MATCH (caller:Function {repo_id: $repo_id})-[r:CALLS]->(callee:Function)
+            RETURN caller.qualname AS caller, callee.qualname AS callee,
+                   r.count AS count, r.lines AS lines,
+                   r.resolution AS resolution, r.confidence AS confidence
+            """,
+            repo_id=repo_id,
+        ).data()
+
+    assert record == [
+        {
+            "caller": "Repo.save",
+            "callee": "Repo.validate",
+            "count": 2,
+            "lines": [12, 15],
+            "resolution": "attribute_self",
+            "confidence": 0.85,
+        }
+    ]
+
+
+def test_unresolved_calls_land_on_the_calling_function(repo_id: str):
+    write_parsed_repo(repo_id, _calling_repo())
+
+    with graph_session() as session:
+        records = session.run(
+            "MATCH (f:Function {repo_id: $repo_id}) "
+            "RETURN f.qualname AS qualname, f.unresolved_calls AS unresolved",
+            repo_id=repo_id,
+        ).data()
+
+    by_name = {r["qualname"]: r["unresolved"] for r in records}
+    assert by_name["Repo.save"] == 1  # mystery.thing
+    assert by_name["Repo.validate"] == 0
+
+
+def test_inherits_edges_keep_mro_order_and_externality(repo_id: str):
+    write_parsed_repo(repo_id, _calling_repo())
+
+    with graph_session() as session:
+        records = session.run(
+            """
+            MATCH (c:Class {repo_id: $repo_id, qualname: 'Repo'})-[r:INHERITS]->(base:Class)
+            RETURN base.qualname AS base, r.position AS position,
+                   r.resolution AS resolution, base.is_external AS external
+            ORDER BY position
+            """,
+            repo_id=repo_id,
+        ).data()
+
+    assert records == [
+        {"base": "Base", "position": 0, "resolution": "internal", "external": False},
+        {"base": "Mixin", "position": 1, "resolution": "external", "external": True},
+    ]
+
+
+def test_a_second_write_does_not_duplicate_calls_or_inherits(repo_id: str):
+    parsed = _calling_repo()
+    write_parsed_repo(repo_id, parsed)
+    before = (count_relationships(repo_id, "CALLS"), count_relationships(repo_id, "INHERITS"))
+
+    result = write_parsed_repo(repo_id, parsed)
+
+    assert (
+        count_relationships(repo_id, "CALLS"),
+        count_relationships(repo_id, "INHERITS"),
+    ) == before
+    assert result.nodes_deleted == 0
+    assert result.relationships_deleted == 0
+
+
+def test_sweep_removes_a_call_that_disappeared(repo_id: str):
+    write_parsed_repo(repo_id, _calling_repo())
+    assert count_relationships(repo_id, "CALLS") == {"attribute_self": 1}
+
+    result = write_parsed_repo(repo_id, _calling_repo(keep_call=False))
+
+    assert count_relationships(repo_id, "CALLS") == {}
+    assert result.relationships_deleted == 1
 
 
 def test_delete_repo_graph_removes_everything(repo_id: str):
