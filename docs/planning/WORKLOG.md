@@ -286,3 +286,26 @@ Week 3, Day 1 — branch `deepu_branch`
   Qdrant. Nothing pushed; `parser/uv.lock` still untracked
 
 ---
+
+## Monday, 17 August 2026 at 17:19 (UTC-04:00)
+
+Week 4, Days 1-3 — branch `deepu_branch`
+
+- Day 1: impact analysis — reverse traversal of `CALLS`/`IMPORTS` scored as
+  `confidence * decay^(hops-1)`; score picks each node's representative route,
+  not hop count. `GET /repos/{id}/impact`
+- Day 2: git history ingestion — `git log --name-status` to co-change pairs
+  with Jaccard, renames followed, mass commits dropped. `CO_CHANGED` edges plus
+  `change_count` on `:File`. `GET /repos/{id}/cochange`
+- Day 2: clone depth raised from 1 to 500; two new `parse_jobs` columns and a
+  migration; co-change failures are logged, not fatal
+- Day 3: risk score — blast/coverage/centrality/coupling/churn weighted into
+  0-100, saturating normalisation, missing history renormalises the weights.
+  `GET /repos/{id}/risk`, formula in `docs/architecture/risk-model.md`
+- 288 backend + 92 parser tests green; ruff clean
+- Verified end-to-end against this repo's own graph and history: 1459
+  functions scored, `get_settings` at 72.9 (high)
+- Not done: nothing pushed to the remote; Days 4-7 (Cytoscape graph,
+  interactivity, LLM-explained impact) not started
+
+---
