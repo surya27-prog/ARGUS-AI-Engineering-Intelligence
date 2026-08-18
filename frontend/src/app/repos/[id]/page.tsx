@@ -142,6 +142,8 @@ export default function RepositoryPage({
           {repo.status === "complete" && (
             <>
               {" · "}
+              <Link href={`/repos/${id}/graph`}>Graph</Link>
+              {" · "}
               <Link href={`/repos/${id}/chat`}>Ask about this codebase →</Link>
             </>
           )}

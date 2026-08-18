@@ -258,3 +258,42 @@ export const api = {
     }
   },
 };
+
+export interface GraphNode {
+  key: string;
+  type: "Repo" | "File" | "Class" | "Function" | "Module";
+  display: string;
+  name: string | null;
+  path: string | null;
+  module: string | null;
+  qualname: string | null;
+  kind: string | null;
+  line_start: number | null;
+  line_end: number | null;
+  is_external: boolean | null;
+  unresolved_calls: number | null;
+  change_count: number | null;
+}
+
+export interface GraphEdge {
+  type: "CONTAINS" | "IMPORTS" | "CALLS" | "INHERITS";
+  source: string;
+  target: string;
+  resolution: string | null;
+  confidence: number | null;
+  count: number | null;
+  line: number | null;
+}
+
+export interface GraphResponse {
+  view: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  /** True when the cap hid part of the graph — surface it, don't pretend. */
+  truncated: boolean;
+}
+
+export const graphApi = {
+  get: (id: string, view: "files" | "calls", limit = 600) =>
+    request<GraphResponse>(`/repos/${id}/graph?view=${view}&limit=${limit}`),
+};
