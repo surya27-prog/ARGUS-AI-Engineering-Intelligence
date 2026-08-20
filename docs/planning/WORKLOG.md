@@ -309,3 +309,35 @@ Week 4, Days 1-3 — branch `deepu_branch`
   interactivity, LLM-explained impact) not started
 
 ---
+
+## Thursday, 20 August 2026 at 15:48 (UTC-04:00)
+
+Week 4, Day 5 — branch `deepu_branch`
+
+- Blast radius on selection: clicking a node loads `/impact` and lights it up —
+  root white, dependents amber fading with hop distance, rest at 10% opacity,
+  and the actual routes highlighted, not just the endpoints
+- Side panel ranks affected nodes with hops and score; rows outside the fetched
+  slice are shown greyed and non-clickable rather than as dead links
+- Colour by risk as well as by type, using the API's own bands; nodes outside
+  the top 200 render grey and say "unscored, not safe"
+- Type filter per node label, last label unremovable
+- Collapse by module into group nodes sized by member count, edges remapped and
+  merged between groups, expand one from the selection panel
+- Added `frontend/src/lib/graphView.ts` — view transforms as pure functions;
+  cap-hidden and filter-hidden node counts reported separately
+- Risk fetched lazily on first switch; colour changes repaint via style mappers
+  instead of rebuilding elements, so the layout, pan and zoom survive
+- Installed `cytoscape` — Day 4 declared it in `package.json` but it was never
+  in `node_modules`, so the graph page could not have typechecked
+- Frontend typechecks and builds; committed as `9a8c5de`
+
+Not done:
+
+- **Day 5 not verified in a browser** — Docker Desktop is paused on this
+  machine, so there was no API to click against. The done-when ("click a
+  function, see it light up its dependents") is unconfirmed
+- Day 4 has no work log entry; not written here since it was a different session
+- Nothing pushed to the remote
+
+---
