@@ -396,3 +396,26 @@ tr.clickable {
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+/* Filter and view controls sit inline with their labels; the default checkbox
+   baseline leaves them floating above the text. */
+.graph-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.graph-controls input[type="checkbox"] {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+select {
+  padding: 4px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 12px;
+}

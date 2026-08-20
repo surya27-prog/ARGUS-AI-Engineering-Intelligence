@@ -297,3 +297,68 @@ export const graphApi = {
   get: (id: string, view: "files" | "calls", limit = 600) =>
     request<GraphResponse>(`/repos/${id}/graph?view=${view}&limit=${limit}`),
 };
+
+export interface ImpactedNode extends GraphNode {
+  hops: number;
+  confidence: number;
+  score: number;
+  via: string[];
+  /** Node keys from the target to this node, inclusive — the actual route. */
+  route: string[];
+}
+
+export interface ImpactSummary {
+  total: number;
+  depth: number;
+  decay: number;
+  direct: number;
+  max_hops: number;
+  top_score: number;
+  by_hop: Record<string, number>;
+  by_type: Record<string, number>;
+}
+
+export interface ImpactResponse {
+  root: GraphNode;
+  items: ImpactedNode[];
+  total: number;
+  truncated: boolean;
+  summary: ImpactSummary;
+}
+
+export const impactApi = {
+  get: (id: string, key: string, depth = 3, limit = 300) =>
+    request<ImpactResponse>(
+      `/repos/${id}/impact?key=${encodeURIComponent(key)}&depth=${depth}&limit=${limit}`,
+    ),
+};
+
+export type RiskBand = "low" | "moderate" | "high" | "critical";
+
+export interface RiskItem {
+  key: string;
+  type: string;
+  display: string;
+  score: number;
+  band: RiskBand;
+  factors: Record<string, number>;
+  weights: Record<string, number>;
+  reasons: string[];
+  node: GraphNode;
+}
+
+export interface RiskResponse {
+  items: RiskItem[];
+  total: number;
+  depth: number;
+  scored: number;
+}
+
+export const riskApi = {
+  /** Repository-wide ranking. `limit` is the API's ceiling, so colouring the
+   *  canvas by risk covers the top slice and leaves the rest unscored. */
+  rank: (id: string, type?: "Function" | "File", limit = 200) =>
+    request<RiskResponse>(
+      `/repos/${id}/risk?limit=${limit}${type ? `&type=${type}` : ""}`,
+    ),
+};
