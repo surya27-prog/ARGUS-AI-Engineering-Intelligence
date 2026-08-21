@@ -168,6 +168,11 @@ class Symbol:
     # Classes only — the raw text of each base, resolved to real INHERITS edges
     # in Week 2 once every module's symbols are known.
     base_classes: tuple[str, ...] = ()
+    # McCabe cyclomatic complexity: 1 plus the decision points in this symbol's
+    # own body. Nested definitions are excluded because they are symbols in
+    # their own right — a function is not complex merely for containing one.
+    # For a class this covers the class body only, not its methods.
+    complexity: int = 1
 
     @property
     def line_count(self) -> int:

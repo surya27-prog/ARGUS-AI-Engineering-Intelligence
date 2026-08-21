@@ -83,6 +83,10 @@ class Symbol(Base):
     docstring: Mapped[str | None] = mapped_column(Text, nullable=True)
     returns: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_async: Mapped[bool] = mapped_column(nullable=False, default=False)
+    # McCabe complexity of this symbol's own body, from the parser. Stored here
+    # rather than on the graph node because the debt detectors read it alongside
+    # docstrings and line counts, which are Postgres-side facts.
+    complexity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     # Kept as JSONB rather than child tables: nothing queries inside them yet,
     # and Week 3's chunker wants the whole signature back in one read.

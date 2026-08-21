@@ -226,6 +226,7 @@ def store_parse_result(
                 docstring=symbol.docstring,
                 returns=symbol.returns,
                 is_async=symbol.is_async,
+                complexity=symbol.complexity,
                 decorators=list(symbol.decorators),
                 parameters=[asdict(p) for p in symbol.parameters],
                 base_classes=list(symbol.base_classes),

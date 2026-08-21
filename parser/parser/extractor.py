@@ -9,6 +9,7 @@ here means a re-resolve never requires re-reading the files.
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterator
 from pathlib import Path
 
 from parser.models import (
@@ -23,6 +24,21 @@ from parser.models import (
 )
 
 _FUNCTION_NODES = (ast.FunctionDef, ast.AsyncFunctionDef)
+
+# Every construct that adds one independent path through a body. `elif` needs no
+# entry of its own: the grammar nests it as another `If`. `try`/`with`/`else` add
+# none — an `else` is the path its `if` already accounted for.
+_BRANCH_NODES = (
+    ast.If,
+    ast.IfExp,
+    ast.For,
+    ast.AsyncFor,
+    ast.While,
+    ast.ExceptHandler,
+    ast.Assert,
+    ast.comprehension,
+    ast.match_case,
+)
 
 
 def extract_file(
@@ -145,6 +161,7 @@ class _Extractor:
                 base_classes=tuple(
                     text for base in node.bases if (text := _expression_text(base))
                 ),
+                complexity=cyclomatic_complexity(node),
             )
         )
 
@@ -176,6 +193,7 @@ class _Extractor:
                 parameters=_parameters(node.args),
                 returns=_expression_text(node.returns),
                 is_async=isinstance(node, ast.AsyncFunctionDef),
+                complexity=cyclomatic_complexity(node),
             )
         )
 
@@ -304,6 +322,41 @@ def _expression_text(node: ast.AST | None) -> str | None:
         return ast.unparse(node)
     except Exception:  # noqa: BLE001 - unparse is best-effort metadata
         return None
+
+
+def cyclomatic_complexity(node: ast.AST) -> int:
+    """McCabe complexity of a definition's own body.
+
+    Public because Week 5's debt detectors are specified in terms of it, and a
+    metric nobody can recompute is a metric nobody will trust.
+    """
+    complexity = 1
+    for child in _own_nodes(node):
+        if isinstance(child, ast.comprehension):
+            # The clause itself, plus each filter: `[x for x in xs if x]` has two
+            # decision points, and scoring it the same as an unfiltered
+            # comprehension would hide the branch.
+            complexity += 1 + len(child.ifs)
+        elif isinstance(child, _BRANCH_NODES):
+            complexity += 1
+        elif isinstance(child, ast.BoolOp):
+            # `a and b and c` is two extra paths, not one: short-circuiting can
+            # stop at either operand.
+            complexity += len(child.values) - 1
+    return complexity
+
+
+def _own_nodes(node: ast.AST) -> Iterator[ast.AST]:
+    """Walk a definition's body without descending into nested definitions."""
+    stack: list[ast.AST] = list(getattr(node, "body", []))
+    while stack:
+        current = stack.pop()
+        yield current
+        # A nested def or class owns its own complexity, so its branches are not
+        # counted again here.
+        if isinstance(current, (*_FUNCTION_NODES, ast.ClassDef)):
+            continue
+        stack.extend(ast.iter_child_nodes(current))
 
 
 def _callee_name(node: ast.AST) -> str | None:
