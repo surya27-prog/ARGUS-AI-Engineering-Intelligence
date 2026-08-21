@@ -341,3 +341,38 @@ Not done:
 - Nothing pushed to the remote
 
 ---
+
+## Friday, 21 August 2026 at 09:50 (UTC-04:00)
+
+Week 4, Day 6 — branch `deepu_branch`
+
+- `services/impact_explain.py` + `GET /repos/{id}/impact/explain` — the blast
+  radius in prose, committed as `1b9a923`
+- Context carries signatures and first docstring lines joined from Postgres,
+  not just node names; the graph stores none of that, and the "because Y" has
+  to come from somewhere
+- An empty radius never calls the model — deterministic text instead, keeping
+  the caveat about unresolved and dynamic calls
+- Prompt requires confidence to be honoured; a guessed edge stated as fact is
+  the failure mode being designed against
+- Not streamed, unlike `/chat` — one cacheable JSON response beside a graph
+- Cached per `(repo, key, depth, commit_sha)`, per process; not shared between
+  workers and lost on restart
+- Provider failure returns 503 saying the radius was computed but not explained,
+  so the UI keeps the ranked list
+- Chat wiring is an explicit `focus_key` on the request, not intent detection;
+  a stale key degrades to an unfocused answer. Chat system prompt gained a
+  paragraph on what a `Blast radius` block is
+- Frontend: explicit "Explain this in English" button (automatic would bill a
+  call per node clicked), a footer saying how many affected nodes the prose was
+  read from, and a chat link carrying the focus key
+- 20 new tests; lint clean; frontend typechecks and builds
+
+Not done:
+
+- **Backend tests not run** — Docker Desktop is paused, so Neo4j and Postgres
+  are unreachable. Only the 4 tests needing neither were executed; the other 16
+  collect but are unverified. Same for Day 5's browser check
+- Nothing pushed to the remote
+
+---
