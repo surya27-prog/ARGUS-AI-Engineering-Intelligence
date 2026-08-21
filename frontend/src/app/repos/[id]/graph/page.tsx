@@ -11,6 +11,7 @@ import {
   impactApi,
   riskApi,
   type GraphResponse,
+  type ImpactExplanation,
   type ImpactResponse,
   type Repository,
   type RiskBand,
@@ -74,6 +75,9 @@ export default function GraphPage({ params }: { params: Promise<{ id: string }> 
   );
   const [impact, setImpact] = useState<ImpactResponse | null>(null);
   const [impactLoading, setImpactLoading] = useState(false);
+  const [explanation, setExplanation] = useState<ImpactExplanation | null>(null);
+  const [explaining, setExplaining] = useState(false);
+  const [explainError, setExplainError] = useState<string | null>(null);
 
   useEffect(() => {
     void api.getRepository(id).then(setRepo).catch(() => undefined);
@@ -135,6 +139,12 @@ export default function GraphPage({ params }: { params: Promise<{ id: string }> 
   // Selecting a real node loads its blast radius. A collapsed group stands for
   // many nodes with no single origin for a change, so it is inspected, not traced.
   useEffect(() => {
+    // The explanation costs a model call, so it is never carried over from a
+    // previous selection — a stale paragraph about a different symbol is worse
+    // than an empty panel.
+    setExplanation(null);
+    setExplainError(null);
+
     if (!selected || selected.startsWith(GROUP_PREFIX)) {
       setImpact(null);
       return;
@@ -171,6 +181,23 @@ export default function GraphPage({ params }: { params: Promise<{ id: string }> 
   }, [impact, selected, viewData.representative]);
 
   const onSelect = useCallback((key: string | null) => setSelected(key), []);
+
+  // Explicit rather than automatic: every explanation is a model call, and
+  // clicking around a graph would otherwise bill one per node.
+  async function explain() {
+    if (!selected) return;
+    setExplaining(true);
+    setExplainError(null);
+    try {
+      setExplanation(await impactApi.explain(id, selected, IMPACT_DEPTH));
+    } catch (e) {
+      // The ranked list is still valid — only the prose is unavailable, which
+      // is what the 503 from this endpoint says.
+      setExplainError(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setExplaining(false);
+    }
+  }
 
   function toggleType(type: NodeType) {
     setTypes((current) => {
@@ -420,6 +447,44 @@ export default function GraphPage({ params }: { params: Promise<{ id: string }> 
                           <strong>{impact.summary.max_hops}</strong>max hops
                         </li>
                       </ul>
+
+                      <div className="explain">
+                        {explanation ? (
+                          <>
+                            <p className="explain-text">{explanation.text}</p>
+                            <p className="explain-meta">
+                              {explanation.explained < explanation.affected
+                                ? `Read from the ${explanation.explained} highest-scoring of ${explanation.affected} affected nodes`
+                                : `Read from all ${explanation.affected} affected nodes`}
+                              {explanation.model && ` · ${explanation.model}`}
+                              {explanation.cached && " · cached"}
+                            </p>
+                          </>
+                        ) : (
+                          <button
+                            className="secondary"
+                            onClick={() => void explain()}
+                            disabled={explaining}
+                          >
+                            {explaining ? "Explaining…" : "Explain this in English"}
+                          </button>
+                        )}
+                        {explainError && (
+                          <p className="error" style={{ fontSize: 12 }}>
+                            {explainError}
+                          </p>
+                        )}
+                        <p style={{ margin: "8px 0 0", fontSize: 12 }}>
+                          <Link
+                            href={`/repos/${id}/chat?focus=${encodeURIComponent(selected!)}&q=${encodeURIComponent(
+                              `What breaks if I change ${node.display}?`,
+                            )}`}
+                          >
+                            Ask follow-ups in chat →
+                          </Link>
+                        </p>
+                      </div>
+
                       <div className="scroll" style={{ maxHeight: 240, marginTop: 10 }}>
                         <table>
                           <thead>

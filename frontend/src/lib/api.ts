@@ -204,13 +204,19 @@ export const api = {
     conversationId: string | null,
     handlers: ChatHandlers,
     signal?: AbortSignal,
+    /** Graph node key whose blast radius should be pulled into the context. */
+    focusKey?: string | null,
   ): Promise<void> {
     let response: Response;
     try {
       response = await fetch(`${API_URL}/repos/${id}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, conversation_id: conversationId }),
+        body: JSON.stringify({
+          message,
+          conversation_id: conversationId,
+          focus_key: focusKey ?? null,
+        }),
         signal,
       });
     } catch {
@@ -326,10 +332,32 @@ export interface ImpactResponse {
   summary: ImpactSummary;
 }
 
+export interface ImpactExplanation {
+  key: string;
+  display: string;
+  text: string;
+  model: string;
+  affected: number;
+  /** Of the affected nodes, how many were actually described to the model. */
+  explained: number;
+  depth: number;
+  truncated: boolean;
+  cached: boolean;
+  input_tokens: number;
+  output_tokens: number;
+  refused: boolean;
+}
+
 export const impactApi = {
   get: (id: string, key: string, depth = 3, limit = 300) =>
     request<ImpactResponse>(
       `/repos/${id}/impact?key=${encodeURIComponent(key)}&depth=${depth}&limit=${limit}`,
+    ),
+
+  /** Not streamed — a few hundred tokens beside a graph, cached server-side. */
+  explain: (id: string, key: string, depth = 3) =>
+    request<ImpactExplanation>(
+      `/repos/${id}/impact/explain?key=${encodeURIComponent(key)}&depth=${depth}`,
     ),
 };
 

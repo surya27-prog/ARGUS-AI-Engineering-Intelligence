@@ -6,15 +6,18 @@ slashes, and a path segment would force every client to double-encode them.
 """
 
 import uuid
+from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models import Repository
-from app.schemas.impact import ImpactResponse
+from app.schemas.impact import ImpactExplanationResponse, ImpactResponse
 from app.services.graph_queries import MAX_DEPTH, NodeNotFound
 from app.services.impact import DEFAULT_DECAY, DEFAULT_IMPACT_DEPTH, impact
+from app.services.impact_explain import explain_impact
+from app.services.providers import ProviderError
 
 router = APIRouter(prefix="/repos/{repository_id}", tags=["impact"])
 
@@ -51,6 +54,41 @@ def get_impact(
         truncated=result.truncated,
         summary=result.summary,
     )
+
+
+@router.get("/impact/explain", response_model=ImpactExplanationResponse)
+def explain(
+    repository_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    key: str = Query(description="Node key, from /graph/search"),
+    depth: int = Query(default=DEFAULT_IMPACT_DEPTH, ge=1, le=MAX_DEPTH),
+) -> ImpactExplanationResponse:
+    """The same blast radius as `/impact`, explained in prose.
+
+    Not streamed, unlike `/chat`: this is a few hundred tokens rendered beside a
+    graph, and a single JSON response is cacheable, re-renderable and far easier
+    for the panel to hold than a stream it would have to reassemble.
+    """
+    repository = _require_repository(db, repository_id)
+    try:
+        explanation = explain_impact(
+            db, repository_id, key, depth=depth, commit_sha=repository.commit_sha
+        )
+    except NodeNotFound as exc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            f"No graph node {key!r} in this repository. "
+            "Has it been parsed, and is the key from /graph/search?",
+        ) from exc
+    except ProviderError as exc:
+        # The radius itself is fine; only the explanation is unavailable. Say
+        # which, so the UI can keep showing the ranked list.
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            f"The blast radius was computed but could not be explained — {exc}",
+        ) from exc
+
+    return ImpactExplanationResponse(**asdict(explanation))
 
 
 def _require_repository(db: Session, repository_id: uuid.UUID) -> Repository:

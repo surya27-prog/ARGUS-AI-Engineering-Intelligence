@@ -18,7 +18,9 @@ from sqlalchemy.orm import Session
 
 from app.models import ChatMessage as ChatTurn
 from app.models import Conversation, MessageRole
+from app.services.graph_queries import NodeNotFound
 from app.services.hybrid import hybrid_search
+from app.services.impact import impact
 from app.services.providers import ChatMessage, ChatProvider, get_chat_provider
 from app.services.retrieval import SearchHit
 
@@ -32,6 +34,12 @@ CONTEXT_CHUNKS = 8
 # Turns of history replayed. The API is stateless, so this is the whole memory;
 # capped because a long thread otherwise crowds out the retrieved code.
 HISTORY_TURNS = 8
+
+# A focused question carries the blast radius of one symbol. Smaller than the
+# explain endpoint's list because it shares the context window with the
+# retrieved code, which is still what answers most of the question.
+FOCUS_NODES = 15
+FOCUS_DEPTH = 3
 
 SYSTEM_PROMPT = """You are ARGUS, answering questions about one specific codebase.
 
@@ -53,6 +61,14 @@ about them.
 When the excerpts do not answer the question, say so plainly and name what you \
 would need to see. Do not fill the gap from general knowledge. A wrong answer \
 about someone's own codebase is worse than no answer.
+
+A question may arrive with a `Blast radius` block: the symbols that reach one \
+particular symbol, with the route a change would travel and the confidence of \
+each link. That block comes from the dependency graph, not from a search, so it \
+is complete within its stated depth in a way the excerpts are not — use it for \
+questions about what a change would affect, and prefer it over inferring \
+callers from the excerpts. Its confidences matter: a low-confidence link is a \
+link ARGUS guessed.
 
 Be direct. Lead with the answer, then the supporting detail."""
 
@@ -96,7 +112,11 @@ def retrieve_context(
 
 
 def build_messages(
-    question: str, context: ChatContext, history: list[ChatTurn]
+    question: str,
+    context: ChatContext,
+    history: list[ChatTurn],
+    *,
+    radius: str | None = None,
 ) -> list[ChatMessage]:
     """History, then the retrieved code, then the question.
 
@@ -109,16 +129,54 @@ def build_messages(
         for turn in history[-HISTORY_TURNS:]
         if turn.content
     ]
-    messages.append(
-        ChatMessage(
-            role="user",
-            content=(
-                f"Excerpts from the codebase:\n\n{context.as_prompt()}\n\n"
-                f"Question: {question}"
-            ),
-        )
-    )
+    parts = [f"Excerpts from the codebase:\n\n{context.as_prompt()}"]
+    if radius:
+        parts.append(radius)
+    parts.append(f"Question: {question}")
+    messages.append(ChatMessage(role="user", content="\n\n".join(parts)))
     return messages
+
+
+def focus_radius(
+    repository_id: UUID | str, key: str, *, depth: int = FOCUS_DEPTH
+) -> str | None:
+    """The blast radius of `key` as a prompt block, or None if unavailable.
+
+    A focus key comes from the user clicking a node, so a stale or unparsed one
+    is a normal outcome rather than an error: the question is still answerable
+    from the excerpts alone, so a failure here degrades the answer instead of
+    losing it.
+    """
+    try:
+        result = impact(repository_id, key, depth=depth, limit=FOCUS_NODES)
+    except NodeNotFound:
+        logger.info("Focus key %s is not in the graph; answering without a radius", key)
+        return None
+    except Exception:  # noqa: BLE001 - the chat answer matters more than the radius
+        logger.exception("Could not compute the focus radius for %s", key)
+        return None
+
+    root = result.root.get("display") or key
+    if not result.items:
+        return (
+            f"Blast radius of `{root}`: nothing in this repository reaches it "
+            f"within {depth} hops."
+        )
+
+    lines = [
+        f"Blast radius of `{root}` — {result.summary['total']} node(s) within "
+        f"{depth} hop(s), {result.summary['direct']} of them direct"
+        + (", capped" if result.truncated else "")
+        + ":"
+    ]
+    for item in result.items:
+        route = " -> ".join(k.rsplit(":", 1)[-1] for k in item["route"])
+        lines.append(
+            f"  {item['display']} — hop {item['hops']}, "
+            f"confidence {item['confidence']:.2f}, via {' then '.join(item['via'])}"
+            f"\n    route: {route}"
+        )
+    return "\n".join(lines)
 
 
 def stream_answer(
@@ -127,6 +185,7 @@ def stream_answer(
     question: str,
     *,
     provider: ChatProvider | None = None,
+    focus_key: str | None = None,
 ) -> tuple[ChatContext, Iterator[str], ChatTurn]:
     """Retrieve, persist the question, and return a stream of the answer.
 
@@ -152,7 +211,8 @@ def stream_answer(
     db.commit()
     db.refresh(answer)
 
-    messages = build_messages(question, context, history)
+    radius = focus_radius(conversation.repository_id, focus_key) if focus_key else None
+    messages = build_messages(question, context, history, radius=radius)
 
     def generate() -> Iterator[str]:
         pieces: list[str] = []

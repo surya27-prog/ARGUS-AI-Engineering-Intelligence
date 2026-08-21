@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -62,7 +63,9 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [focusKey, setFocusKey] = useState<string | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  const search = useSearchParams();
 
   useEffect(() => {
     void api
@@ -70,6 +73,15 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
       .then(setRepo)
       .catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
   }, [id]);
+
+  // The graph panel hands a node over in the URL rather than guessing intent
+  // from the question text. `q` only seeds the box; the user still sends it.
+  useEffect(() => {
+    const focus = search.get("focus");
+    if (focus) setFocusKey(focus);
+    const question = search.get("q");
+    if (question) setInput(question);
+  }, [search]);
 
   // Follow the answer as it streams in.
   useEffect(() => {
@@ -116,27 +128,34 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
         });
 
       try {
-        await api.chat(id, question, conversationId, {
-          onContext: (newConversationId, citations) => {
-            setConversationId(newConversationId);
-            updateLast({ citations });
+        await api.chat(
+          id,
+          question,
+          conversationId,
+          {
+            onContext: (newConversationId, citations) => {
+              setConversationId(newConversationId);
+              updateLast({ citations });
+            },
+            onDelta: (text) =>
+              setMessages((prev) => {
+                const next = [...prev];
+                const last = next[next.length - 1];
+                next[next.length - 1] = { ...last, content: last.content + text };
+                return next;
+              }),
+            onError: (detail) => setError(detail),
           },
-          onDelta: (text) =>
-            setMessages((prev) => {
-              const next = [...prev];
-              const last = next[next.length - 1];
-              next[next.length - 1] = { ...last, content: last.content + text };
-              return next;
-            }),
-          onError: (detail) => setError(detail),
-        });
+          undefined,
+          focusKey,
+        );
       } catch (e) {
         setError(e instanceof ApiError ? e.message : String(e));
       } finally {
         setStreaming(false);
       }
     },
-    [id, input, conversationId, streaming],
+    [id, input, conversationId, streaming, focusKey],
   );
 
   return (
@@ -147,8 +166,24 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
           Answers are grounded in retrieved code. Every claim carries a citation
           you can click through to the source.
         </p>
+        {focusKey && (
+          <p className="focus-note">
+            Focused on <span className="mono">{focusKey.split(":").pop()}</span> — its
+            blast radius from the dependency graph goes into the context, alongside the
+            retrieved code.{" "}
+            <button
+              className="secondary"
+              style={{ padding: "1px 8px", fontSize: 11 }}
+              onClick={() => setFocusKey(null)}
+            >
+              clear
+            </button>
+          </p>
+        )}
         <p style={{ marginBottom: 0 }}>
           <Link href={`/repos/${id}`}>← Files and symbols</Link>
+          {" · "}
+          <Link href={`/repos/${id}/graph`}>Graph →</Link>
         </p>
       </section>
 

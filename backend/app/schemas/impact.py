@@ -40,3 +40,27 @@ class ImpactResponse(BaseModel):
     total: int
     truncated: bool = Field(description="True when the cap hid part of the radius")
     summary: ImpactSummary
+
+
+class ImpactExplanationResponse(BaseModel):
+    """The blast radius in prose.
+
+    The counts travel with the text so a reader can see what it was derived from
+    — an explanation of the top 25 of 300 affected nodes is a different claim
+    from an explanation of all 12.
+    """
+
+    key: str
+    display: str
+    text: str
+    model: str = Field(description="Empty when no model was called")
+    affected: int = Field(description="Nodes in the radius")
+    explained: int = Field(description="Of those, how many were described to the model")
+    depth: int
+    truncated: bool = Field(description="True when the cap hid part of the radius")
+    cached: bool = Field(description="True when served from the per-process cache")
+    input_tokens: int = 0
+    output_tokens: int = 0
+    refused: bool = Field(
+        default=False, description="True when the provider declined the request"
+    )

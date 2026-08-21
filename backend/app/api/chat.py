@@ -23,6 +23,14 @@ class ChatRequest(BaseModel):
     conversation_id: uuid.UUID | None = Field(
         default=None, description="omit to start a new conversation"
     )
+    focus_key: str | None = Field(
+        default=None,
+        description=(
+            "Graph node key to pull a blast radius into the context. Set by the "
+            "graph panel when the user asks about a selected node; there is no "
+            "intent detection on the message itself"
+        ),
+    )
 
 
 class MessageOut(BaseModel):
@@ -66,7 +74,9 @@ def chat(
     session = SessionLocal()
     try:
         conversation = session.get(Conversation, conversation.id)
-        context, stream, answer = stream_answer(session, conversation, payload.message)
+        context, stream, answer = stream_answer(
+            session, conversation, payload.message, focus_key=payload.focus_key
+        )
     except ProviderError as exc:
         session.close()
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
