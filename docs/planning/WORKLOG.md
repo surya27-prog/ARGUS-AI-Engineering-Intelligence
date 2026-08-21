@@ -376,3 +376,47 @@ Not done:
 - Nothing pushed to the remote
 
 ---
+
+## Friday, 21 August 2026 at 11:32 (UTC-04:00)
+
+Week 4, Day 7 — branch `deepu_branch`
+
+Buffer day spent clearing the verification debt from Days 5 and 6.
+
+- Full suites green against the live stack: **308 backend + 92 parser = 400
+  tests**, ruff clean on both
+- Applied 4 pending migrations that had never run on this machine
+  (`parse_jobs`, embedding columns, conversations/chat_messages, cochange columns)
+- Re-parsed the `requests` fixture: it was parsed in Week 1, before the graph
+  writer existed, so its Neo4j graph was empty. Now 322 nodes / 400 edges in the
+  calls view, 728 nodes scored for risk
+- Verified `/impact` on real data: `is_prepared` → 17 affected, 9 direct, max 2
+  hops, routes correct
+- Verified `/impact/explain` end to end. The stub provider echoes its prompt
+  back, which confirms the Day 6 design on real data: the context carried
+  `src/requests/_types.py:47`, the full annotated signature and the docstring's
+  first line — all joined from Postgres, which is where the "because Y" comes from
+- Verified the explanation cache: second call returned `cached: true`, 0 output
+  tokens
+- Both new frontend routes compile and serve 200
+- Tagged `v0.4-impact`
+
+Notes for Week 5:
+
+- This machine has **no `.env`** — every setting falls back to its default, so
+  `LLM_PROVIDER=anthropic` with an empty key. The verification above ran with
+  `LLM_PROVIDER=stub` passed to the process, leaving no trace on disk. Real
+  answers need `.env` created from `.env.example`
+- The running Qdrant container reports **1.12.5** while `docker-compose.yml`
+  pins `v1.19.0` and the client is 1.19.0 — a stale container from before the
+  pin was bumped. Left alone rather than recreated on a buffer day, since a
+  1.12→1.19 storage migration could force a re-embed
+
+Not done:
+
+- **Day 5's browser check** — the Chrome extension disconnected mid-session, so
+  "click a function, see it light up its dependents" is still unconfirmed in a
+  real browser. The data behind it is verified; only the rendering is not
+- Nothing pushed to the remote
+
+---
