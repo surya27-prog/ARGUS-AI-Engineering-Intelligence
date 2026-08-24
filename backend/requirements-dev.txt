@@ -25,7 +25,11 @@ pluggy==1.6.0
     # via pytest
 pygments==2.20.0
     # via pytest
+coverage==7.6.12
+    # via pytest-cov
 pytest==9.1.1
+pytest-cov==6.0.0
+    # via argus-backend
 ruff==0.16.1
 typing-extensions==4.16.0 ; python_full_version < '3.13'
     # via anyio

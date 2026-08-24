@@ -1,5 +1,7 @@
 # ARGUS — AI Engineering Intelligence Platform
 
+[![CI](https://github.com/surya27-prog/ARGUS-AI-Engineering-Intelligence/actions/workflows/ci.yml/badge.svg)](https://github.com/surya27-prog/ARGUS-AI-Engineering-Intelligence/actions/workflows/ci.yml)
+
 > Ask your codebase questions. Understand what breaks before you break it.
 
 ARGUS ingests a software repository and builds a combined **knowledge graph + vector index** of it, then uses an LLM over both to explain architecture, answer engineering questions with citations, predict the blast radius of a code change, and surface technical debt.
