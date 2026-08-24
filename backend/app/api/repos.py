@@ -24,6 +24,7 @@ from fastapi import (
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.cache import invalidate_all
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.models import ParseJob, ParseStatus, Repository, SourceFile, Symbol
@@ -271,6 +272,11 @@ def delete_repository(repository_id: uuid.UUID, db: Session = Depends(get_db)) -
 
     db.delete(repository)
     db.commit()
+
+    # `parsed_at` keying retires stale cache entries by itself, but a deleted
+    # repository has no next parse to retire them — so clear it explicitly
+    # rather than leaving its scans in memory until they are evicted.
+    invalidate_all(repository_id)
 
 
 def _require_repository(db: Session, repository_id: uuid.UUID) -> Repository:

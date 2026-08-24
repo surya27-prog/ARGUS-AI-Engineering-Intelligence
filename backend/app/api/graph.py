@@ -11,6 +11,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.cache import graph_cache
 from app.core.database import get_db
 from app.models import Repository
 from app.schemas.graph import (
@@ -40,8 +41,15 @@ def get_graph(
     limit: int = Query(default=500, ge=1, le=5000),
 ) -> GraphResponse:
     """The repository's structure, capped for rendering."""
-    _require_repository(db, repository_id)
-    result = repository_graph(repository_id, view=view, limit=limit)
+    repository = _require_repository(db, repository_id)
+    # Cached per (view, limit): the graph page switches between the two views and
+    # four caps, and each combination is a fresh whole-graph read otherwise.
+    result, _ = graph_cache.get_or_compute(
+        repository_id,
+        repository.parsed_at,
+        (view, limit),
+        lambda: repository_graph(repository_id, view=view, limit=limit),
+    )
     return GraphResponse(
         view=view,
         nodes=result.nodes,

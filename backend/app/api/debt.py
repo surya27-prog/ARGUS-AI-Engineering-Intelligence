@@ -5,6 +5,7 @@ downloadable document rather than a second endpoint, because the alternative is
 two code paths that can disagree about what the repository's debt is.
 """
 
+import logging
 import re
 import uuid
 from dataclasses import asdict
@@ -13,11 +14,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
+from app.core.cache import debt_cache
 from app.core.database import get_db
 from app.models import ParseStatus, Repository
 from app.schemas.debt import DebtResponse
 from app.services.debt import ALL_KINDS, DebtKind, Severity, run_detectors
 from app.services.debt.report import filter_findings, rollup_by_file, summary_dict, to_markdown
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/repos/{repository_id}", tags=["debt"])
 
@@ -59,9 +63,10 @@ def get_debt(
 ):
     """Run every detector and return the findings, ranked.
 
-    The scan is computed per request rather than stored: it is a function of the
-    parse, and a stored report would silently describe an older one. Caching it
-    is the Day 4 performance pass's problem, not correctness.
+    The scan is never persisted: it is a function of the parse, and a stored
+    report would silently describe an older one. It is cached in process against
+    the repository's `parsed_at`, which retires the entry on the next parse
+    without anything having to remember to clear it.
     """
     repository = _require_repository(db, repository_id)
     if repository.status != ParseStatus.COMPLETE:
@@ -72,7 +77,18 @@ def get_debt(
         )
 
     kinds = _validate_kinds(kind)
-    report = run_detectors(db, repository_id)
+
+    # Cached on the parse, not on the filters: the scan is the expensive part and
+    # it does not depend on them, so one scan serves every filtered view of the
+    # same parse. Filtering happens below, on the cached findings.
+    report, cached = debt_cache.get_or_compute(
+        repository_id,
+        repository.parsed_at,
+        (),
+        lambda: run_detectors(db, repository_id),
+    )
+    if cached:
+        logger.debug("Served the debt scan for %s from cache", repository_id)
 
     filtered = filter_findings(
         report.findings,

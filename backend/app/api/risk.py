@@ -5,17 +5,21 @@ one-element ranking, and giving it a separate shape would make every client
 handle two.
 """
 
+import logging
 import uuid
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.cache import risk_cache
 from app.core.database import get_db
 from app.models import Repository
 from app.schemas.risk import RiskResponse
 from app.services.graph_queries import MAX_DEPTH, NodeNotFound
 from app.services.risk import DEFAULT_RISK_DEPTH, rank_repository, score_node
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/repos/{repository_id}", tags=["risk"])
 
@@ -34,7 +38,7 @@ def get_risk(
     limit: int = Query(default=20, ge=1, le=200),
 ) -> RiskResponse:
     """Risk scores with their whole derivation attached."""
-    _require_repository(db, repository_id)
+    repository = _require_repository(db, repository_id)
 
     if key is not None:
         try:
@@ -49,7 +53,18 @@ def get_risk(
     else:
         # `scored` is reported separately from `total` so a caller can see that
         # the ranking considered the whole repository, not just the page it got.
-        items, scored = rank_repository(repository_id, node_type=type, depth=depth, limit=limit)
+        #
+        # Cached: this reads every symbol and every edge in the repository, and
+        # the dashboard asks for two variants of it on load. Keyed on the
+        # repository's `parsed_at`, so a re-parse retires the entry by itself.
+        (items, scored), cached = risk_cache.get_or_compute(
+            repository_id,
+            repository.parsed_at,
+            (type, depth, limit),
+            lambda: rank_repository(repository_id, node_type=type, depth=depth, limit=limit),
+        )
+        if cached:
+            logger.debug("Served the risk ranking for %s from cache", repository_id)
 
     # `asdict` rather than handing the dataclasses over: it flattens the nested
     # `RiskMetrics` too, which pydantic will not do for a plain dataclass.
