@@ -125,6 +125,12 @@ class ParseJobOut(BaseModel):
     started_at: datetime | None
     finished_at: datetime | None
     duration_ms: int | None
+    stage_ms: dict[str, int] = Field(
+        default_factory=dict,
+        description="Milliseconds per pipeline stage: analyze, store, graph, "
+        "cochange, vectors. A total says a parse was slow; this says which stage "
+        "was. Empty for runs recorded before the column existed",
+    )
 
 
 class Page(BaseModel, Generic[T]):

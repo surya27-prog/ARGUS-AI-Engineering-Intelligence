@@ -99,6 +99,16 @@ export interface Conversation {
   messages: ChatMessage[];
 }
 
+/** The list shape: no turns. Fetching a conversation's messages needs
+ *  `getConversation`, which is the only place that ships message bodies. */
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+}
+
 export interface ChatHandlers {
   onContext: (conversationId: string, citations: Citation[]) => void;
   onDelta: (text: string) => void;
@@ -184,8 +194,8 @@ export const api = {
       `/repos/${id}/symbols?limit=${limit}${fileId ? `&file_id=${fileId}` : ""}`,
     ),
 
-  listConversations: (id: string) =>
-    request<Conversation[]>(`/repos/${id}/conversations`),
+  listConversations: (id: string, limit = 50) =>
+    request<Page<ConversationSummary>>(`/repos/${id}/conversations?limit=${limit}`),
 
   getConversation: (id: string, conversationId: string) =>
     request<Conversation>(`/repos/${id}/conversations/${conversationId}`),

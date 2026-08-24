@@ -4,14 +4,15 @@ import json
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal, get_db
 from app.models import ChatMessage, Conversation, Repository
+from app.schemas.repository import Page
 from app.services.chat import stream_answer
 from app.services.providers import ProviderError
 
@@ -51,6 +52,23 @@ class ConversationOut(BaseModel):
     messages: list[MessageOut] = []
 
     model_config = {"from_attributes": True}
+
+
+class ConversationSummaryOut(BaseModel):
+    """A conversation without its turns.
+
+    The list endpoint used to return `ConversationOut`, which carries every
+    message. With lazy loading that is one query per conversation — 51 for a page
+    of 50 — and it ships every message body and citation payload to render what
+    is only ever a picker. The count and the last-activity timestamp are what a
+    list actually needs, and both come from one aggregate query.
+    """
+
+    id: uuid.UUID
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    message_count: int
 
 
 def _sse(event: str, data: dict) -> str:
@@ -111,14 +129,42 @@ def chat(
     )
 
 
-@router.get("/conversations", response_model=list[ConversationOut])
-def list_conversations(repository_id: uuid.UUID, db: Session = Depends(get_db)):
-    return db.scalars(
-        select(Conversation)
-        .where(Conversation.repository_id == repository_id)
+@router.get("/conversations", response_model=Page[ConversationSummaryOut])
+def list_conversations(
+    repository_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> Page[ConversationSummaryOut]:
+    """Conversations for a repository, newest first, without their turns."""
+    conditions = [Conversation.repository_id == repository_id]
+    total = db.scalar(select(func.count()).select_from(Conversation).where(*conditions)) or 0
+
+    rows = db.execute(
+        select(Conversation, func.count(ChatMessage.id).label("message_count"))
+        .outerjoin(ChatMessage, ChatMessage.conversation_id == Conversation.id)
+        .where(*conditions)
+        .group_by(Conversation.id)
         .order_by(Conversation.created_at.desc())
-        .limit(50)
+        .limit(limit)
+        .offset(offset)
     ).all()
+
+    return Page[ConversationSummaryOut](
+        items=[
+            ConversationSummaryOut(
+                id=conversation.id,
+                title=conversation.title,
+                created_at=conversation.created_at,
+                updated_at=conversation.updated_at,
+                message_count=message_count,
+            )
+            for conversation, message_count in rows
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/conversations/{conversation_id}", response_model=ConversationOut)

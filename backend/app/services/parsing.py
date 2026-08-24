@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -26,6 +28,24 @@ from parser import IngestError, ParsedRepo, analyze_repo
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+@contextmanager
+def _stage(job: ParseJob, name: str) -> Iterator[None]:
+    """Time one pipeline stage onto `job.stage_ms`.
+
+    Records on the way out whether or not the body raised, so a failed parse
+    still says how long the stage that failed had been running — which is the
+    case where the timing matters most.
+    """
+    begin = time.perf_counter()
+    try:
+        yield
+    finally:
+        elapsed = int((time.perf_counter() - begin) * 1000)
+        # Reassigned rather than mutated: SQLAlchemy does not track in-place
+        # changes to a JSONB dict, so `job.stage_ms[name] = x` would not persist.
+        job.stage_ms = {**(job.stage_ms or {}), name: elapsed}
 
 
 def parse_repository(repository_id: UUID, source: str) -> None:
@@ -58,17 +78,18 @@ def parse_repository(repository_id: UUID, source: str) -> None:
         started = time.perf_counter()
 
         try:
-            parsed = analyze_repo(
-                source,
-                workspace_dir=settings.workspace_dir,
-                max_size_mb=settings.max_repo_size_mb,
-                timeout_seconds=settings.parse_timeout_seconds,
-                force=True,
-                # A clone has to bring the commits down before anything can read
-                # them; Week 1's depth-1 clone would leave co-change with a
-                # single commit and nothing to pair.
-                history_depth=settings.history_depth,
-            )
+            with _stage(job, "analyze"):
+                parsed = analyze_repo(
+                    source,
+                    workspace_dir=settings.workspace_dir,
+                    max_size_mb=settings.max_repo_size_mb,
+                    timeout_seconds=settings.parse_timeout_seconds,
+                    force=True,
+                    # A clone has to bring the commits down before anything can
+                    # read them; Week 1's depth-1 clone would leave co-change
+                    # with a single commit and nothing to pair.
+                    history_depth=settings.history_depth,
+                )
         except IngestError as exc:
             _fail(db, repository, job, str(exc), stage="ingest", started=started)
             return
@@ -92,7 +113,8 @@ def parse_repository(repository_id: UUID, source: str) -> None:
 
         try:
             # Stays `parsing` until the graph exists — see below.
-            store_parse_result(db, repository, parsed, mark_complete=False)
+            with _stage(job, "store"):
+                store_parse_result(db, repository, parsed, mark_complete=False)
         except Exception as exc:  # noqa: BLE001 - recorded on the row, not raised
             logger.exception("Storing the parse failed for repository %s", repository_id)
             _fail(
@@ -112,7 +134,8 @@ def parse_repository(repository_id: UUID, source: str) -> None:
         try:
             # The job's run_id is the graph's stamp, which is what lets a row
             # here name the exact subgraph it produced.
-            result = write_parsed_repo(repository.id, parsed, run_id=str(job.run_id))
+            with _stage(job, "graph"):
+                result = write_parsed_repo(repository.id, parsed, run_id=str(job.run_id))
         except Exception as exc:  # noqa: BLE001 - recorded on the row, not raised
             logger.exception("Graph write failed for repository %s", repository_id)
             _fail(
@@ -135,7 +158,8 @@ def parse_repository(repository_id: UUID, source: str) -> None:
         # directories — have no history to read at all. So a failure is logged
         # and the parse continues, unlike the graph write above.
         try:
-            coupling = ingest_history(repository.id, parsed, run_id=str(job.run_id))
+            with _stage(job, "cochange"):
+                coupling = ingest_history(repository.id, parsed, run_id=str(job.run_id))
             job.commits_analyzed = coupling.commits_used
             job.cochange_edges = coupling.edges_written
         except Exception:  # noqa: BLE001 - an enrichment, not a required output
@@ -147,7 +171,10 @@ def parse_repository(repository_id: UUID, source: str) -> None:
         # would break every one of those flows for anyone who has not set one.
         if settings.has_embedding_credentials:
             try:
-                vectors = write_repo_vectors(repository.id, parsed, run_id=str(job.run_id))
+                with _stage(job, "vectors"):
+                    vectors = write_repo_vectors(
+                        repository.id, parsed, run_id=str(job.run_id)
+                    )
             except Exception as exc:  # noqa: BLE001 - recorded on the row, not raised
                 logger.exception("Embedding failed for repository %s", repository_id)
                 _fail(

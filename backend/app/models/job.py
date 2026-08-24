@@ -15,7 +15,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -89,6 +89,12 @@ class ParseJob(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Milliseconds per pipeline stage: analyze, store, graph, cochange, vectors.
+    # A single total tells you a parse took four minutes; this tells you which
+    # stage spent them, which is the only version you can act on. Recorded on
+    # every run rather than only under a profiler, so the question "why was that
+    # repository slow" is answerable after the fact.
+    stage_ms: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
     repository: Mapped["Repository"] = relationship(back_populates="jobs")  # noqa: F821
 
