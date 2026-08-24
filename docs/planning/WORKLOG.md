@@ -551,3 +551,54 @@ Not done:
 - Nothing pushed to the remote
 
 ---
+
+## Monday, 24 August 2026 at 13:14 (UTC-04:00)
+
+Week 5, Day 4 — branch `deepu_branch`
+
+Performance pass. Committed as `a3a41b8` and `0dd82fd`.
+
+- **Per-stage parse timing.** `parse_jobs` recorded one `duration_ms`, which says
+  a parse took four minutes and nothing about where they went. Added a
+  `stage_ms` JSONB column (migration `4e21c7b9a30f`) written by a context
+  manager around analyze / store / graph / cochange / vectors. Records on the way
+  out even when the stage raised — the case where timing matters most
+- **Fixed an N+1.** `GET /conversations` returned every message with the
+  relationship on lazy loading: a page of 50 was 51 queries, shipping full
+  message bodies to render a picker. Now `Page[ConversationSummaryOut]` with
+  `message_count` from one aggregate query, and limit/offset. It was the only
+  endpoint in the app without a cap
+- **Cached the three whole-repository reads** — `/risk`, `/debt`, `/graph` — in
+  `app/core/cache.py`, keyed on `(repository_id, parsed_at, variant)`. A TTL
+  would be a guess about staleness, wrong in both directions; `parsed_at` makes
+  an entry valid exactly as long as its parse is current, invalidates on
+  re-parse by itself, and costs no extra query
+- Compute runs outside the lock (duplicate work beats blocking); unparsed
+  repositories are never cached; `DELETE /repos/{id}` invalidates explicitly
+- **Non-finding worth recording:** Neo4j writes were already batched with
+  `UNWIND` since Week 2, so that plan item needed no work
+- Added `backend/scripts/profile_pipeline.py` — parses, reads the stage timings
+  back, times ten endpoints at the median of five, prints both tables
+- Wrote `docs/performance.md` — methodology, the five stages and what bounds
+  each, what changed and why, and the costs not yet addressed
+- 12 cache tests pass (pure, no stores needed); lint clean; frontend typechecks
+
+Not done:
+
+- **No measurements.** Docker is still down, so `docs/performance.md` has its
+  tables deliberately empty rather than filled with numbers nobody took. One run
+  of the profiler fills them
+- The migration is hand-written — `--autogenerate` needs a live database
+- Still unrun: ~15 backend tests from Days 2–3, and the whole suite since Day 1
+- Nothing pushed to the remote
+
+Costs identified but not fixed, recorded in `docs/performance.md`:
+
+- the depth-6 circular-import query pays for all 1000 rows before Python filters
+  them to the minimal cycles
+- `impact_explain` has its own cache keyed on `commit_sha`; two implementations
+  is one too many
+- the vector pass re-embeds unchanged files, though `SourceFile.sha256` exists
+  precisely to let it skip them — likely the largest available saving
+
+---
