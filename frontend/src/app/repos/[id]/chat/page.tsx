@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useRef, useState } from "react";
 
+import RepoNav from "@/components/RepoNav";
 import {
   api,
   ApiError,
@@ -18,7 +19,7 @@ function CitationChip({ repoId, citation }: { repoId: string; citation: Citation
   return (
     <Link
       className={`chip ${citation.source}`}
-      href={`/repos/${repoId}?path=${encodeURIComponent(citation.path)}`}
+      href={`/repos/${repoId}/files?path=${encodeURIComponent(citation.path)}`}
       title={
         `${citation.citation}\n${citation.kind} ${citation.qualname ?? ""}\n` +
         (citation.source === "graph"
@@ -180,11 +181,7 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
             </button>
           </p>
         )}
-        <p style={{ marginBottom: 0 }}>
-          <Link href={`/repos/${id}`}>← Files and symbols</Link>
-          {" · "}
-          <Link href={`/repos/${id}/graph`}>Graph →</Link>
-        </p>
+        <RepoNav id={id} active="chat" />
       </section>
 
       {error && (

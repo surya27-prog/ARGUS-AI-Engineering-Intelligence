@@ -3,51 +3,107 @@
 import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
 
+import RepoNav from "@/components/RepoNav";
+import RiskHeatmap from "@/components/RiskHeatmap";
 import {
   api,
   ApiError,
+  debtApi,
+  riskApi,
+  type DebtResponse,
   type Repository,
-  type SourceFile,
-  type Symbol,
+  type RiskItem,
 } from "@/lib/api";
 
 const POLL_MS = 1500;
 
-export default function RepositoryPage({
-  params,
-  searchParams,
+/** Files in the heatmap. Enough to show where risk concentrates without asking
+ *  the ranking for every file in a large repository. */
+const HEATMAP_FILES = 120;
+
+/** Detector labels. The API's slugs are precise but not prose. */
+const DEBT_LABEL: Record<string, string> = {
+  complexity: "Complex functions",
+  god_file: "God files",
+  circular_import: "Circular imports",
+  dead_code: "Possibly dead",
+  missing_docstring: "Undocumented",
+};
+
+function StatTile({
+  value,
+  label,
+  hint,
 }: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ path?: string }>;
+  value: string | number;
+  label: string;
+  hint?: string;
 }) {
+  return (
+    <div className="tile">
+      <strong>{value}</strong>
+      <span>{label}</span>
+      {hint && <em>{hint}</em>}
+    </div>
+  );
+}
+
+/**
+ * Horizontal bars for the riskiest functions.
+ *
+ * A bar list rather than a chart: the job is magnitude beside identity, and the
+ * identities are long dotted qualnames that would be unreadable rotated under an
+ * x-axis. Values are labelled directly, so there is no axis to read against.
+ */
+function BarList({ items }: { items: RiskItem[] }) {
+  if (!items.length) return <p className="empty">Nothing scored yet.</p>;
+  const max = Math.max(...items.map((i) => i.score), 1);
+
+  return (
+    <ol className="barlist">
+      {items.map((item) => (
+        <li key={item.key}>
+          <span className="mono barlist-label" title={item.display}>
+            {item.display}
+          </span>
+          <span className="barlist-track">
+            <span
+              className="barlist-fill"
+              style={{ width: `${(item.score / max) * 100}%` }}
+            />
+          </span>
+          <span className="num barlist-value">{item.score.toFixed(0)}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+export default function DashboardPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  // Set when a citation chip in the chat links here, so the cited file is
-  // filtered to and selected instead of leaving the user to find it.
-  const { path: citedPath } = use(searchParams);
 
   const [repo, setRepo] = useState<Repository | null>(null);
-  const [files, setFiles] = useState<SourceFile[]>([]);
-  const [symbols, setSymbols] = useState<Symbol[]>([]);
-  const [symbolTotal, setSymbolTotal] = useState(0);
-  const [selected, setSelected] = useState<SourceFile | null>(null);
-  const [search, setSearch] = useState(citedPath ?? "");
+  const [files, setFiles] = useState<RiskItem[]>([]);
+  const [functions, setFunctions] = useState<RiskItem[]>([]);
+  const [debt, setDebt] = useState<DebtResponse | null>(null);
+  const [selected, setSelected] = useState<RiskItem | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     try {
       const current = await api.getRepository(id);
       setRepo(current);
-      if (current.status === "complete") {
-        setFiles((await api.listFiles(id)).items);
-      }
       setError(null);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : String(err));
+      return current;
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+      return null;
     }
   }, [id]);
 
   useEffect(() => {
-    void refresh();
+    void refresh().finally(() => setLoading(false));
   }, [refresh]);
 
   const parsing = repo?.status === "pending" || repo?.status === "parsing";
@@ -57,217 +113,226 @@ export default function RepositoryPage({
     return () => clearInterval(timer);
   }, [parsing, refresh]);
 
-  // Symbols are fetched per selection rather than filtered client-side: a repo
-  // can hold more symbols than one page, so filtering what happens to be loaded
-  // would show an empty list for files outside that window.
+  // Three independent requests rather than one await chain: the debt scan is by
+  // far the slowest, and making the risk panels wait behind it would leave the
+  // whole dashboard blank for as long as it takes.
   const complete = repo?.status === "complete";
-  const selectedId = selected?.id;
   useEffect(() => {
     if (!complete) return;
     let cancelled = false;
-    void (async () => {
-      try {
-        const page = await api.listSymbols(id, selectedId);
-        if (!cancelled) {
-          setSymbols(page.items);
-          setSymbolTotal(page.total);
-        }
-      } catch (err) {
-        if (!cancelled) setError(err instanceof ApiError ? err.message : String(err));
-      }
-    })();
+
+    void riskApi.rank(id, "File", HEATMAP_FILES).then(
+      (data) => !cancelled && setFiles(data.items),
+      () => undefined,
+    );
+    void riskApi.rank(id, "Function", 10).then(
+      (data) => !cancelled && setFunctions(data.items),
+      () => undefined,
+    );
+    // limit=1: the dashboard needs the summary and the file rollup, not the
+    // findings themselves — those live in the report and the download.
+    void debtApi.get(id, 1).then(
+      (data) => !cancelled && setDebt(data),
+      (e) => !cancelled && setError(e instanceof ApiError ? e.message : String(e)),
+    );
+
     return () => {
       cancelled = true;
     };
-  }, [id, selectedId, complete]);
+  }, [complete, id]);
 
-  // Arriving from a citation chip: select the cited file once its row exists,
-  // so the symbol panel shows that file rather than the whole repository.
-  useEffect(() => {
-    if (!citedPath || selected) return;
-    const match = files.find((f) => f.path === citedPath);
-    if (match) setSelected(match);
-  }, [citedPath, files, selected]);
+  if (loading) return <p className="empty">Loading…</p>;
 
-  const visibleFiles = search
-    ? files.filter((f) => f.path.toLowerCase().includes(search.toLowerCase()))
-    : files;
-  const visibleSymbols = symbols;
-
-  if (error) {
+  if (!repo) {
     return (
       <section className="panel">
-        <p className="error">{error}</p>
-        <p>
-          <Link href="/">← Back to repositories</Link>
-        </p>
+        <p className="error">{error ?? "Repository not found."}</p>
+        <Link href="/">← All repositories</Link>
       </section>
     );
   }
 
-  if (!repo) {
-    return <p className="empty">Loading…</p>;
-  }
+  const worstFunction = functions[0];
+  const criticalFiles = files.filter((f) => f.band === "critical").length;
+  const failed = debt ? Object.entries(debt.summary.failed) : [];
 
   return (
     <>
       <section className="panel">
         <h2>{repo.name}</h2>
-        <ul className="stats">
-          <li>
-            <strong>{repo.file_count}</strong>files
-          </li>
-          <li>
-            <strong>{repo.symbol_count}</strong>symbols
-          </li>
-          <li>
-            <strong>
-              <span className={`badge ${repo.status}`}>{repo.status}</span>
-            </strong>
-            status
-          </li>
-          <li>
-            <strong className="mono">{repo.commit_sha?.slice(0, 8) ?? "—"}</strong>
-            {repo.default_branch ?? "commit"}
-          </li>
-        </ul>
-        {repo.url && (
-          <p className="muted mono" style={{ fontSize: 12, marginBottom: 0 }}>
-            {repo.url}
-          </p>
-        )}
-        {repo.error_message && <p className="error">{repo.error_message}</p>}
-        <p style={{ marginBottom: 0 }}>
-          <Link href="/">← All repositories</Link>
-          {repo.status === "complete" && (
-            <>
-              {" · "}
-              <Link href={`/repos/${id}/graph`}>Graph</Link>
-              {" · "}
-              <Link href={`/repos/${id}/chat`}>Ask about this codebase →</Link>
-            </>
-          )}
+        <RepoNav id={id} active="dashboard" />
+        <p className="muted mono" style={{ fontSize: 12, margin: "10px 0 0" }}>
+          {repo.commit_sha ? repo.commit_sha.slice(0, 8) : "—"}
+          {repo.default_branch ? ` on ${repo.default_branch}` : ""}
+          {repo.url ? ` · ${repo.url}` : ""}
         </p>
+        {repo.error_message && <p className="error">{repo.error_message}</p>}
+        {error && !repo.error_message && <p className="error">{error}</p>}
       </section>
 
       {parsing && (
         <section className="panel">
-          <p className="empty">Parsing… this page updates itself when it finishes.</p>
+          <p className="empty">
+            Parsing — this page fills in by itself when the parse finishes.
+          </p>
         </section>
       )}
 
-      {repo.status === "complete" && (
-        <div className="split">
+      {complete && (
+        <>
           <section className="panel">
-            <h2>Files ({visibleFiles.length})</h2>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filter by path…"
-              aria-label="Filter files"
-              style={{ width: "100%", marginBottom: 12 }}
-            />
-            <div className="scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Path</th>
-                    <th className="num">Lines</th>
-                    <th className="num">Symbols</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleFiles.map((file) => (
-                    <tr
-                      key={file.id}
-                      className={`clickable ${selected?.id === file.id ? "selected" : ""}`}
-                      onClick={() => setSelected(selected?.id === file.id ? null : file)}
-                    >
-                      <td className="mono">
-                        {file.path}
-                        {file.parse_error && (
-                          <div style={{ color: "var(--error)", fontSize: 11 }}>
-                            {file.parse_error}
-                          </div>
-                        )}
-                      </td>
-                      <td className="num">{file.line_count}</td>
-                      <td className="num">{file.symbol_count}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {visibleFiles.length === 0 && <p className="empty">No files match.</p>}
+            <h2>At a glance</h2>
+            <div className="tiles">
+              <StatTile value={repo.file_count} label="files" />
+              <StatTile value={repo.symbol_count} label="symbols" />
+              <StatTile
+                value={debt ? debt.summary.scanned_total : "…"}
+                label="debt findings"
+                hint={debt ? `${debt.summary.by_severity.high ?? 0} high severity` : undefined}
+              />
+              <StatTile
+                value={worstFunction ? worstFunction.score.toFixed(0) : "…"}
+                label="highest risk"
+                hint={worstFunction?.display}
+              />
+              <StatTile
+                value={criticalFiles}
+                label="critical files"
+                hint={`of ${files.length} scored`}
+              />
             </div>
           </section>
 
-          <section className="panel">
-            <h2>
-              Symbols ({visibleSymbols.length})
-              {selected && (
+          {failed.length > 0 && (
+            <section className="panel">
+              {/* A detector that crashed reports zero findings, which reads as a
+                  clean result. The counts above are wrong until this is fixed. */}
+              <p className="error" style={{ fontSize: 12, margin: 0 }}>
+                {failed.length} detector{failed.length === 1 ? "" : "s"} did not run, so
+                the counts above are incomplete:{" "}
+                {failed.map(([kind, why]) => `${kind} (${why})`).join("; ")}
+              </p>
+            </section>
+          )}
+
+          <div className="split">
+            <section className="panel">
+              <h2>Risk by file</h2>
+              <RiskHeatmap
+                items={files}
+                selected={selected?.key ?? null}
+                onSelect={setSelected}
+              />
+            </section>
+
+            <section className="panel">
+              <h2>{selected ? "Why this score" : "Riskiest functions"}</h2>
+              {selected ? (
                 <>
-                  {" — "}
-                  <span className="mono" style={{ textTransform: "none" }}>
-                    {selected.path}
-                  </span>{" "}
-                  <button
-                    className="secondary"
-                    style={{ padding: "2px 8px", fontSize: 11 }}
-                    onClick={() => setSelected(null)}
-                  >
-                    clear
-                  </button>
+                  <p className="mono" style={{ fontSize: 13, marginTop: 0 }}>
+                    {selected.display}{" "}
+                    <span className="muted">
+                      {selected.score.toFixed(1)} ({selected.band})
+                    </span>
+                  </p>
+                  <ul className="reasons">
+                    {selected.reasons.map((reason) => (
+                      <li key={reason}>{reason}</li>
+                    ))}
+                  </ul>
+                  {/* The factors table is the point: a 0-100 number nobody can
+                      take apart is a number nobody should trust. */}
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Factor</th>
+                        <th className="num">Value</th>
+                        <th className="num">Weight</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(selected.factors).map(([factor, value]) => (
+                        <tr key={factor}>
+                          <td>{factor}</td>
+                          <td className="num">{value.toFixed(2)}</td>
+                          <td className="num muted">
+                            {(selected.weights[factor] ?? 0).toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p style={{ marginBottom: 0, marginTop: 12 }}>
+                    <button className="secondary" onClick={() => setSelected(null)}>
+                      Back to riskiest functions
+                    </button>
+                  </p>
                 </>
+              ) : (
+                <BarList items={functions} />
               )}
-            </h2>
-            <div className="scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Symbol</th>
-                    <th className="num">Line</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleSymbols.map((symbol) => (
-                    <tr key={symbol.id}>
-                      <td>
-                        <span className="kind">{symbol.kind}</span>{" "}
-                        <span className="mono">
-                          {symbol.is_async && <span className="muted">async </span>}
-                          {symbol.qualname}
-                          {symbol.kind !== "class" && (
-                            <span className="muted">
-                              ({symbol.parameters.map((p) => p.name).join(", ")})
-                            </span>
-                          )}
-                          {symbol.base_classes.length > 0 && (
-                            <span className="muted">({symbol.base_classes.join(", ")})</span>
-                          )}
-                        </span>
-                        {symbol.module && (
-                          <div className="muted" style={{ fontSize: 11 }}>
-                            {symbol.module}
-                          </div>
-                        )}
-                      </td>
-                      <td className="num mono">{symbol.line_start}</td>
-                    </tr>
+            </section>
+          </div>
+
+          <section className="panel">
+            <h2>Technical debt</h2>
+            {debt ? (
+              <>
+                <div className="tiles">
+                  {Object.entries(DEBT_LABEL).map(([kind, label]) => (
+                    <StatTile
+                      key={kind}
+                      value={debt.summary.by_kind[kind] ?? 0}
+                      label={label}
+                    />
                   ))}
-                </tbody>
-              </table>
-              {visibleSymbols.length === 0 && <p className="empty">No symbols extracted.</p>}
-              {!selected && symbols.length < symbolTotal && (
-                <p className="empty">
-                  Showing the first {symbols.length} of {symbolTotal}. Select a file to
-                  narrow the list.
+                </div>
+                {debt.files.length > 0 && (
+                  <div className="scroll" style={{ maxHeight: 320, marginTop: 16 }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Files carrying the most debt</th>
+                          <th className="num">Findings</th>
+                          <th>Worst</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {debt.files.slice(0, 10).map((entry) => (
+                          <tr key={entry.path}>
+                            <td className="mono">
+                              <Link
+                                href={`/repos/${id}/files?path=${encodeURIComponent(entry.path)}`}
+                              >
+                                {entry.path}
+                              </Link>
+                            </td>
+                            <td className="num">{entry.findings}</td>
+                            <td className="muted">{entry.worst}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <p style={{ marginBottom: 0, marginTop: 12 }}>
+                  {/* A plain link, not fetch-and-blob: the endpoint already sets
+                      Content-Disposition, so the browser does the rest. */}
+                  <a href={debtApi.markdownUrl(id)}>Download the full report (Markdown)</a>
                 </p>
-              )}
-            </div>
+              </>
+            ) : (
+              <p className="empty">Scanning for debt…</p>
+            )}
           </section>
-        </div>
+        </>
       )}
+
+      <section className="panel">
+        <p style={{ margin: 0 }}>
+          <Link href="/">← All repositories</Link>
+        </p>
+      </section>
     </>
   );
 }

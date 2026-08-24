@@ -450,3 +450,154 @@ select {
   font-size: 12px;
   color: var(--muted);
 }
+
+/* --- dashboard ------------------------------------------------------------ */
+
+.repo-nav {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  padding-bottom: 2px;
+}
+
+.repo-nav-current {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom: 2px solid var(--accent);
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+/* A hero number: the value carries the emphasis, the label stays recessive. */
+.tile {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tile strong {
+  font-size: 26px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.tile span {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.tile em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- risk heatmap --------------------------------------------------------- */
+
+.heatmap {
+  display: grid;
+  /* 2px gap so adjacent fills are separated by surface rather than touching. */
+  grid-template-columns: repeat(auto-fill, minmax(18px, 1fr));
+  gap: 2px;
+}
+
+.heat-cell {
+  aspect-ratio: 1;
+  width: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: outline-color 80ms linear;
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+}
+
+.heat-cell:hover,
+.heat-cell:focus-visible {
+  outline-color: var(--text);
+}
+
+.heat-cell.selected {
+  outline-color: var(--accent);
+}
+
+/* Reserved height: a readout that appears on hover must not reflow the grid. */
+.heat-readout {
+  min-height: 2.6em;
+  margin-top: 10px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* --- bar list ------------------------------------------------------------- */
+
+.barlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.barlist li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px 34px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.barlist-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barlist-track {
+  background: var(--bg);
+  border-radius: 3px;
+  height: 8px;
+  overflow: hidden;
+}
+
+/* Anchored to the baseline, rounded only at the data end. */
+.barlist-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 0 3px 3px 0;
+}
+
+.barlist-value {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.reasons {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.reasons li {
+  margin-bottom: 3px;
+}

@@ -17,6 +17,7 @@ import {
   type RiskBand,
 } from "@/lib/api";
 import type { ColorMode, ImpactOverlay } from "@/components/GraphCanvas";
+import RepoNav from "@/components/RepoNav";
 import {
   applyView,
   GROUP_PREFIX,
@@ -289,11 +290,9 @@ export default function GraphPage({ params }: { params: Promise<{ id: string }> 
           ))}
         </div>
 
-        <p style={{ marginBottom: 0, marginTop: 12 }}>
-          <Link href={`/repos/${id}`}>← Files and symbols</Link>
-          {" · "}
-          <Link href={`/repos/${id}/chat`}>Ask about this codebase →</Link>
-        </p>
+        <div style={{ marginTop: 12 }}>
+          <RepoNav id={id} active="graph" />
+        </div>
       </section>
 
       {error && (
@@ -374,7 +373,7 @@ export default function GraphPage({ params }: { params: Promise<{ id: string }> 
                   <>
                     <dt>File</dt>
                     <dd className="mono">
-                      <Link href={`/repos/${id}?path=${encodeURIComponent(node.path)}`}>
+                      <Link href={`/repos/${id}/files?path=${encodeURIComponent(node.path)}`}>
                         {node.path}
                         {node.line_start ? `:${node.line_start}` : ""}
                       </Link>

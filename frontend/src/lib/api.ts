@@ -390,3 +390,50 @@ export const riskApi = {
       `/repos/${id}/risk?limit=${limit}${type ? `&type=${type}` : ""}`,
     ),
 };
+
+export interface DebtFinding {
+  kind: string;
+  severity: "high" | "medium" | "low" | "info";
+  subject: string;
+  path: string | null;
+  line_start: number | null;
+  key: string | null;
+  why: string;
+  metrics: Record<string, unknown>;
+  confidence: number;
+  location: string;
+}
+
+export interface FileDebt {
+  path: string;
+  findings: number;
+  worst: string;
+  by_kind: Record<string, number>;
+}
+
+export interface DebtSummary {
+  total: number;
+  scanned_total: number;
+  by_kind: Record<string, number>;
+  by_severity: Record<string, number>;
+  ran: string[];
+  /** A detector that did not run reports zero findings, which is not clean. */
+  failed: Record<string, string>;
+}
+
+export interface DebtResponse {
+  summary: DebtSummary;
+  items: DebtFinding[];
+  files: FileDebt[];
+  limit: number;
+  offset: number;
+  truncated: boolean;
+}
+
+export const debtApi = {
+  get: (id: string, limit = 100) =>
+    request<DebtResponse>(`/repos/${id}/debt?limit=${limit}`),
+
+  /** The Markdown export's URL, for a plain download link. */
+  markdownUrl: (id: string) => `${API_URL}/repos/${id}/debt?format=markdown`,
+};
