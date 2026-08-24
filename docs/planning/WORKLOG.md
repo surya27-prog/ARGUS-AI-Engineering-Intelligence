@@ -602,3 +602,53 @@ Costs identified but not fixed, recorded in `docs/performance.md`:
   precisely to let it skip them — likely the largest available saving
 
 ---
+
+## Monday, 24 August 2026 at 13:21 (UTC-04:00)
+
+Week 5, Day 5 — branch `deepu_branch`
+
+- `.github/workflows/ci.yml` — parser, backend and frontend jobs on every push.
+  Committed as `cff36b9`
+- **CI needs no API key.** The stub chat and hash embedding providers are real
+  implementations of the same interfaces, selected by two env vars, so the whole
+  suite runs with no secret and no billable call — the payoff for Week 3 keeping
+  chat and embeddings as separate interfaces
+- Parser job runs first and needs no services (~10s); a break there is usually
+  the cause of a backend break
+- Backend job gets Postgres, Neo4j and Qdrant as service containers. Postgres
+  credentials match the defaults in `config.py`, so no `DATABASE_URL` needed.
+  Neo4j heap is 512m against compose's 2G — a runner has 7 GB and three services
+- Neo4j and Qdrant are waited on from the runner, not with `--health-cmd`: that
+  runs inside the container and neither image has curl. Without the wait, the
+  first test fails on a connection refused that looks like a real bug
+- Frontend job typechecks *and* builds; the build catches server/client boundary
+  mistakes `tsc` alone does not
+- Coverage via `pytest-cov`, gated at 60%, overridable with a `COVERAGE_FLOOR`
+  repository variable so the number can move without editing the workflow.
+  `TYPE_CHECKING`, abstract methods and `...` bodies excluded
+- **Measured 44% coverage from the 35 service-free tests** — a tenth of the
+  suite. The 60% floor should be comfortable once the other ~300 run
+- README badge added, pointing at `surya27-prog/ARGUS-AI-Engineering-Intelligence`
+  (what `origin` actually is — TIMELINE.md still lists a `DeepuChandru/...` URL)
+- Verified job by job locally: parser lint + 92 tests pass, backend lint passes,
+  frontend typecheck passes, `npm ci` in sync with the lockfile
+
+Decisions:
+
+- **Auth skipped.** The plan offers it as optional today and lists it third in
+  the scope-cut order. With verification debt outstanding and Week 6 being deploy
+  and docs, an afternoon of JWT is the wrong use of this week's slack
+- **The flaky parser test was left alone.**
+  `test_max_commits_limits_the_window` is logically sound — five commits, ask for
+  three, get three, no timing dependency. It is just the heaviest test in the
+  file at ~15 git spawns, which is why it died when this host ran out of fork
+  headroom. Weakening a correct test to accommodate a broken host is the wrong fix
+
+Not done:
+
+- The backend CI job is unverified — Docker is down locally, which is precisely
+  the gap CI closes. **The first push is the measurement**
+- Nothing pushed yet, so CI has never run and the badge will read "no status"
+  until it does
+
+---
