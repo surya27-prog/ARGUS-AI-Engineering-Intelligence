@@ -507,3 +507,47 @@ Not done:
 - Nothing pushed to the remote
 
 ---
+
+## Monday, 24 August 2026 at 12:40 (UTC-04:00)
+
+Week 5, Day 3 — branch `deepu_branch`
+
+- `/repos/{id}` is now the dashboard; the file/symbol browser moved to
+  `/repos/{id}/files`. Committed as `e0bf60c`
+- Five stat tiles, risk heatmap over the top 120 files, riskiest ten functions
+  as a bar list, debt counts per detector, ten files carrying the most debt, and
+  a link to the Markdown export
+- Clicking a heatmap cell shows the full derivation — reasons plus the
+  factor/weight table
+- **Found and corrected a colour-vision defect.** The app's risk band colours
+  fail as a categorical set: `moderate` (#d29922) and `high` (#f0883e) are
+  ΔE 1.5 apart for deuteranopes and 7.0 for normal vision, against a floor of
+  15 — exactly the pair a risk reader must separate. Risk is ordered, so the
+  heatmap now uses a validated sequential ramp
+  (`#6b4642 #a8503d #dc6b3f #f8796d`): monotone lightness, adjacent ΔL ≥ 0.06,
+  single hue (30° spread), light end clearing 2:1 against the panel
+- Colour is never the only channel — each cell names its band in its accessible
+  label and tooltip, and the tables are the table view
+- A failed detector is called out above the counts; a crashed detector reports
+  zero findings, which reads as clean
+- Three panels fetch independently: the debt scan is much the slowest and would
+  otherwise hold the whole dashboard blank
+- Added `RepoNav`, replacing four hand-written link lines that had drifted — the
+  chat page's "back" link pointed at what is now the dashboard while calling it
+  "Files and symbols"
+- Typechecks and builds. Layout verified by rendering a static harness with the
+  real CSS and measuring in a browser: `scrollWidth == clientWidth`, zero
+  overflowing elements
+
+Follow-up:
+
+- `GraphCanvas` still colours nodes by band categorically — the same failing
+  pair. It should move to this ramp
+
+Not done:
+
+- **Not verified against live data.** Docker Desktop is down after the host ran
+  out of paging file earlier in the session, so no API to render against
+- Nothing pushed to the remote
+
+---
