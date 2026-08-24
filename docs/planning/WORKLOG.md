@@ -474,3 +474,36 @@ Notes:
   Week 5 Friday CI work, since it will be flaky there too
 
 ---
+
+## Monday, 24 August 2026 at 12:15 (UTC-04:00)
+
+Week 5, Day 2 — branch `deepu_branch`
+
+- `GET /repos/{id}/debt` — ranked findings as JSON, or the whole scan as a
+  downloadable Markdown document with `format=markdown`. Committed as `26f84a2`
+- One endpoint and one scan behind both representations; two code paths could
+  disagree about what a repository's debt is
+- Per-file rollup: 509 findings read as 509 unrelated problems, but debt
+  concentrates. Ranked by each file's worst finding before its count
+- The document says what was looked for, not only what was found, with a
+  "this report is incomplete" warning above the findings when a detector failed
+- Filtering by kind, minimum severity and minimum confidence — the last turns
+  off "might be dead code". Summary carries the filtered total next to the whole
+  scan's, so a narrow filter cannot read as a clean repository
+- Markdown export honours filters but ignores pagination
+- Download filename scrubbed to `[A-Za-z0-9._-]`, since repository names reach a
+  Content-Disposition header
+- **Bug the tests caught:** `Severity` is declared least-severe-first so the
+  StrEnum reads naturally, which meant looping over it rendered the summary table
+  and findings sections best-first. Added `SEVERITIES_WORST_FIRST`
+
+Not done:
+
+- **13 of the 30 new tests could not run.** Docker Desktop died of host memory
+  exhaustion partway through the session — the paging file filled to the point
+  that launching `git` failed. The 17 pure aggregation, filtering and rendering
+  tests pass; everything needing Postgres or Neo4j is unverified, as is a fresh
+  full-suite run
+- Nothing pushed to the remote
+
+---
