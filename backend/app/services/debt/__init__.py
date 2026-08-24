@@ -22,6 +22,13 @@ from app.services.debt.postgres_detectors import (
     detect_god_files,
     detect_missing_docstrings,
 )
+from app.services.debt.report import (
+    FileDebt,
+    filter_findings,
+    rollup_by_file,
+    summary_dict,
+    to_markdown,
+)
 from app.services.debt.runner import ALL_KINDS, DebtReport, run_detectors
 
 __all__ = [
@@ -29,6 +36,7 @@ __all__ = [
     "SEVERITY_ORDER",
     "DebtKind",
     "DebtReport",
+    "FileDebt",
     "Finding",
     "Severity",
     "detect_circular_imports",
@@ -36,7 +44,11 @@ __all__ = [
     "detect_dead_code",
     "detect_god_files",
     "detect_missing_docstrings",
+    "filter_findings",
     "percentile",
+    "rollup_by_file",
     "run_detectors",
     "severity_from_ratio",
+    "summary_dict",
+    "to_markdown",
 ]

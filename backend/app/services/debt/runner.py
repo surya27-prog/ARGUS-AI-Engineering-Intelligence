@@ -15,7 +15,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.services.debt.base import DebtKind, Finding, Severity
+from app.services.debt.base import SEVERITIES_WORST_FIRST, DebtKind, Finding
 from app.services.debt.graph_detectors import detect_circular_imports, detect_dead_code
 from app.services.debt.postgres_detectors import (
     detect_complexity,
@@ -114,7 +114,7 @@ def run_detectors(
         by_severity={
             str(severity): count
             for severity, count in (
-                (s, sum(1 for f in findings if f.severity == s)) for s in Severity
+                (s, sum(1 for f in findings if f.severity == s)) for s in SEVERITIES_WORST_FIRST
             )
             if count
         },

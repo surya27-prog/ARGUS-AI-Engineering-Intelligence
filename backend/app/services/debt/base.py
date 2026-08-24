@@ -48,6 +48,16 @@ SEVERITY_ORDER: dict[str, int] = {
     Severity.INFO: 3,
 }
 
+# Iterate this, never the enum. `Severity` is declared least-severe-first so the
+# StrEnum reads naturally, which means looping over it renders a report
+# best-first — the opposite of what anyone wants to read.
+SEVERITIES_WORST_FIRST: tuple[Severity, ...] = (
+    Severity.HIGH,
+    Severity.MEDIUM,
+    Severity.LOW,
+    Severity.INFO,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class Finding:
@@ -108,6 +118,7 @@ def severity_from_ratio(ratio: float) -> Severity:
 
 
 __all__ = [
+    "SEVERITIES_WORST_FIRST",
     "SEVERITY_ORDER",
     "DebtKind",
     "Finding",

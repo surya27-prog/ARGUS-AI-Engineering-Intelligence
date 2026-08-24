@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import chat, cochange, graph, health, impact, repos, risk, search
+from app.api import chat, cochange, debt, graph, health, impact, repos, risk, search
 from app.core.config import get_settings
 from app.core.graph import close_driver
 
@@ -42,6 +42,7 @@ app.include_router(chat.router)
 app.include_router(impact.router)
 app.include_router(cochange.router)
 app.include_router(risk.router)
+app.include_router(debt.router)
 
 
 @app.get("/", include_in_schema=False)
