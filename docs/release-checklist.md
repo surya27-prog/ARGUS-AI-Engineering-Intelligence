@@ -46,9 +46,11 @@ depends on the last.
 
 ## Blocked on a push
 
-- [ ] **Push the branch.** Nothing has ever been pushed, so CI has never run and
-      the README badge reads "no status". This single action verifies the backend
-      CI job, the service containers, the migration step and the coverage gate at
+- [ ] **Push the branch.** The remote's `deepu_branch` sits at Week 4 Day 4
+      (`394cd85`); the 31 commits since are local only — including
+      `.github/workflows/ci.yml` itself, which is why CI has never run and the
+      README badge reads "no status". This single action verifies the backend CI
+      job, the service containers, the migration step and the coverage gate at
       once.
       ```bash
       git push origin deepu_branch --follow-tags
