@@ -1,0 +1,37 @@
+# The build context is the repository root (the backend image needs `parser/`
+# and `database/`), so the ignore rules live here rather than per-directory.
+
+.git/
+.github/
+
+# Virtualenvs and node_modules are hundreds of megabytes of platform-specific
+# binaries that would be wrong inside a Linux image anyway; both are
+# reinstalled from their lockfiles during the build.
+**/.venv/
+**/node_modules/
+**/__pycache__/
+**/*.py[cod]
+
+**/.next/
+**/out/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+**/htmlcov/
+**/.coverage
+**/coverage.xml
+
+# Never bake a secret or a local clone cache into a layer.
+.env
+.env.*
+!.env.example
+workspace/
+
+# Not needed at runtime. Tests and the profiler stay out of the image: it is for
+# serving, and leaving them out keeps the layer and the attack surface smaller.
+backend/tests/
+backend/scripts/
+parser/tests/
+docs/
+*.md
+!README.md

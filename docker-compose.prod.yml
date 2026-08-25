@@ -1,0 +1,166 @@
+# ARGUS — production compose.
+#
+#     cp .env.prod.example .env.prod
+#     # fill in the passwords and keys, then:
+#     docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# How this differs from `docker-compose.yml`, which is for development:
+#
+# - **no source mounts and no reload.** The images carry the code; a bind mount
+#   would let the host contradict what was built and tested
+# - **no default passwords.** Every secret is `${VAR:?message}`, which fails the
+#   command with that message rather than starting with `argus_dev_password`.
+#   A stack that boots with a known password is worse than one that refuses to
+#   boot at all
+# - **the data stores publish nothing.** Only the frontend and the API are
+#   reachable from outside; Postgres, Neo4j and Qdrant talk over the internal
+#   network only. In development they are published so a psql or cypher-shell can
+#   reach them, which is exactly what should not be true in production
+# - **startup is ordered on health, not on start.** `service_healthy` means the
+#   API does not begin migrating before Postgres can accept a connection
+#
+# Note that this composes the whole stack onto one host, which is the "runs from
+# prod compose locally" check the plan asks for. Week 6 Day 2 replaces the three
+# data services with managed ones; the API and frontend images are the parts that
+# carry forward unchanged.
+
+name: argus-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  neo4j:
+    image: neo4j:5.26-community
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?set NEO4J_PASSWORD}
+      NEO4J_server_memory_heap_initial__size: ${NEO4J_HEAP:-1G}
+      NEO4J_server_memory_heap_max__size: ${NEO4J_HEAP:-1G}
+      NEO4J_server_memory_pagecache_size: ${NEO4J_PAGECACHE:-512m}
+    volumes:
+      - neo4j-data:/data
+    healthcheck:
+      # The image has no curl, so this uses cypher-shell, which it does have —
+      # and which proves the query interface works rather than only that a port
+      # is open.
+      test:
+        [
+          "CMD-SHELL",
+          "cypher-shell -u neo4j -p $${NEO4J_PASSWORD} 'RETURN 1' || exit 1",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
+  qdrant:
+    image: qdrant/qdrant:v1.19.0
+    restart: unless-stopped
+    volumes:
+      - qdrant-data:/qdrant/storage
+    # No healthcheck: the image has neither curl nor wget, and a shell-based
+    # check would need a tool that is not there. The API tolerates Qdrant being
+    # unavailable — /health reports it and only search and chat degrade — so
+    # nothing depends on it being healthy before starting.
+
+  api:
+    build:
+      # The repository root, because the backend image needs `parser/` and
+      # `database/` as well as `backend/`. See backend/Dockerfile.
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      # Waits for the migration to *finish*, not merely to start. Without this
+      # the API and the migration race, and an API that comes up first serves
+      # requests against a schema that is still being changed under it.
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Service names, not localhost: inside the compose network each store is
+      # reachable by the name of its service.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-argus_code_chunks}
+      # The browser's origin, which is what CORS checks — not the API's own.
+      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS to the browser-facing frontend URL}
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
+      MAX_REPO_SIZE_MB: ${MAX_REPO_SIZE_MB:-500}
+      HISTORY_DEPTH: ${HISTORY_DEPTH:-500}
+      ALLOW_PRIVATE_GIT_HOSTS: ${ALLOW_PRIVATE_GIT_HOSTS:-false}
+    volumes:
+      # Clones survive a restart. Named rather than a bind mount so the uid
+      # inside the image owns it without depending on host permissions.
+      - workspace:/workspace
+    ports:
+      - "${API_PORT:-8000}:8000"
+
+  # Migrations run as their own one-shot service rather than in the API's
+  # entrypoint. Two reasons: with more than one API replica an entrypoint
+  # migration races itself, and a migration failure here is a visible non-zero
+  # exit rather than a container that restart-loops with the reason buried in
+  # its logs.
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    command: ["alembic", "upgrade", "head"]
+
+  web:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+      args:
+        # Compiled into the client bundle, so it must be the URL the *browser*
+        # resolves. `http://api:8000` would work inside the network and fail in
+        # every browser.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?set NEXT_PUBLIC_API_URL to the browser-facing API URL}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+volumes:
+  postgres-data:
+  neo4j-data:
+  qdrant-data:
+  workspace:
