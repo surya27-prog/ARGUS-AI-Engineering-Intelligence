@@ -839,3 +839,50 @@ Not done:
 - Nothing pushed to the remote
 
 ---
+
+## Tuesday, 25 August 2026 at 12:09 (UTC-04:00)
+
+Week 6, Day 3 — branch `deepu_branch`
+
+Logging and a smoke test. Committed as `6e52c59`.
+
+- **`LOG_LEVEL` was a dead setting** — named in five config files and wired to
+  nothing. The root logger sat at its default, so every `logger.info(...)` in the
+  codebase was dropped, and the `warning`/`exception` calls that got through went
+  via Python's last-resort handler with no timestamp and no logger name. That made
+  Week 5's error id close to useless: quoting an id only helps if the line
+  carrying it can be found by time
+- `app/core/logging.py` installs the root handler from the setting, and adds:
+- **One id per request, not per crash.** `errors.py` minted an id only on a
+  raise. The middleware assigns one inbound, returns it as `X-Request-ID`, and
+  puts it in a ContextVar every log line picks up — so the access line, the app
+  logs, the response header and an error body all carry the same string. An
+  inbound id is honoured so a trace from a proxy stays one trace, truncated to 64
+  chars since it is echoed back
+- ContextVar rather than thread-local: Starlette serves concurrently on one event
+  loop, where a thread-local would leak one request's id into another's lines
+- **JSON in production, plain text in development,** following `APP_ENV` — there
+  is no case where you want JSON on your own machine. The formatter cannot raise;
+  an exception inside logging while handling an exception is unpleasant to debug
+- Health checks excluded from the access log — one every 30s buries real traffic
+- **`scripts/smoke_test.py`**, pointable at any URL. Read-only by default;
+  `--ingest` costs a clone and real money so it is opt-in. Collects failures
+  rather than aborting on the first, and exits with the count so a deploy hook can
+  gate. Checks failure paths — unknown repo is 404 not 500, link-local URL
+  refused, credentialed URL refused, out-of-range limit is 422 — and that
+  `/files` and `/symbols` are non-empty, since a 200 with nothing in it is what a
+  status-code-only check misses
+- **Running the smoke test found a bug in itself:** a Unicode arrow in its output
+  crashed on a Windows console under cp1252, taking the run with it. All printed
+  strings are ASCII now
+
+- 17 logging tests; 90 runnable tests pass; lint clean
+
+Not done:
+
+- **Production is not smoke-tested** — nothing is deployed, so there is no live
+  URL. The day's criterion is "a stranger could use the live URL without you
+  present"; the script makes that one command once there is one
+- Nothing pushed to the remote
+
+---
