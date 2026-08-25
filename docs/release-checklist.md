@@ -73,6 +73,20 @@ depends on the last.
       repository mid-parse; hold refresh on the chat page to trip the limiter;
       point at a repository with no Python in it.
 
+## Blocked on a camera
+
+Both need the app running with real provider keys, which is the first section of
+this file.
+
+- [ ] **The demo video.** Week 6 Day 6's criterion — "video uploaded, linked in
+      README". The script and shot list are written and committed
+      ([`demo-script.md`](demo-script.md)); nothing has been recorded. The
+      pre-flight list in that file is the gate: real chat and embedding keys,
+      `psf/requests` parsed the day before, every page warmed.
+- [ ] **README screenshots.** The dashboard, the graph with a blast radius lit
+      up, and a chat answer with citation chips. Same session as the recording —
+      the shots are frames of shots 4, 6 and 8.
+
 ## Needs a decision, not a check
 
 - [ ] **`.env` does not exist on the dev machine.** Every setting falls back to

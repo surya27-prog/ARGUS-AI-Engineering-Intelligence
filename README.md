@@ -52,6 +52,36 @@ so rather than inviting you to delete a live handler.
 
 ---
 
+## Demo
+
+> **Not recorded yet.** The walkthrough is scripted shot by shot in
+> [`docs/demo-script.md`](docs/demo-script.md) — five and a half minutes, from the
+> problem through ingest, the graph, a blast radius, a grounded answer and the
+> debt report. Recording it needs a running stack with real provider keys; see
+> [`docs/release-checklist.md`](docs/release-checklist.md). The link replaces this
+> note once it is up.
+
+The shortest version of what it does, without the interface:
+
+```
+POST /repos                                  {"url": "https://github.com/psf/requests"}
+  -> 202; poll GET /repos/{id} until status is complete
+
+GET  /repos/{id}/graph/search?q=Session.request
+  -> the node key: sym:{id}:requests.sessions:Session.request
+
+GET  /repos/{id}/impact?key=<that key>
+  -> everything that reaches it, ranked by confidence x decay^(hops-1), each with its route
+
+GET  /repos/{id}/impact/explain?key=<that key>
+  -> the same radius in prose, cached per parse
+
+POST /repos/{id}/chat                        {"message": "how does retrying work?"}
+  -> SSE: one context frame of citations, then the answer
+```
+
+---
+
 ## Screenshots
 
 > **Not yet captured.** The interface is built and builds clean, but the
@@ -59,7 +89,10 @@ so rather than inviting you to delete a live handler.
 > [`docs/release-checklist.md`](docs/release-checklist.md). Placeholders are left
 > here deliberately rather than filled with mockups.
 >
-> To capture them: `docker compose up -d`, start the API and `npm run dev`, ingest
+> Capture them in the same session as the video — they are frames of shots 4, 6
+> and 8 in [`docs/demo-script.md`](docs/demo-script.md), whose pre-flight list
+> also covers the window size and zoom. In short: `docker compose up -d`, start
+> the API and `npm run dev`, ingest
 > `https://github.com/psf/requests`, then grab the dashboard, the graph with a
 > blast radius lit up, and a chat answer with citation chips.
 
@@ -287,6 +320,7 @@ More, with reasoning, in
 | [`api/`](docs/api/README.md) | API conventions, and the generated OpenAPI schema |
 | [`deployment.md`](docs/deployment.md) | Managed services, and a symptom-to-cause table |
 | [`performance.md`](docs/performance.md) | Where a parse spends its time |
+| [`demo-script.md`](docs/demo-script.md) | The walkthrough, shot by shot |
 | [`release-checklist.md`](docs/release-checklist.md) | What is verified and what is not |
 | [`planning/TIMELINE.md`](docs/planning/TIMELINE.md) | The six-week plan |
 | [`planning/WORKLOG.md`](docs/planning/WORKLOG.md) | What actually happened, day by day |

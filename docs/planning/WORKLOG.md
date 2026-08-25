@@ -963,3 +963,33 @@ Not done:
 - Nothing pushed to the remote
 
 ---
+
+## Tuesday, 25 August 2026 at 12:36 (UTC-04:00)
+
+Week 6, Day 6 — branch `deepu_branch`
+
+- `docs/demo-script.md`: the 5m30s walkthrough as a 10-shot list with timecodes,
+  the click path and the narration for each shot
+- Wrote the pre-flight list from what would actually cost a re-record: real
+  provider keys (the `stub`/`hash` providers give fluent nonsense on camera), the
+  demo repository parsed the day before, every page warmed, 100% display scale
+- Checked the script against the UI rather than from memory, which corrected two
+  shots: the graph canvas has no search box (`graph/search` is an endpoint only),
+  and a view or node-cap change re-runs the `cose` layout and moves the node you
+  had lined up
+- Found the better shot-8 transition in the code: the blast-radius panel's "Ask
+  follow-ups in chat" link carries `focus` and seeds the question, so the handoff
+  is one click instead of a page change
+- README: added a **Demo** section with the honest placeholder plus the same
+  walkthrough as five verified API calls; pointed the screenshots note at the
+  script's pre-flight instead of repeating it
+- `release-checklist.md`: new "Blocked on a camera" section for the video and the
+  screenshots
+
+Not done:
+
+- The video itself is not recorded. It needs a running stack and real provider
+  keys; neither is available on this machine
+- Nothing pushed to the remote
+
+---
