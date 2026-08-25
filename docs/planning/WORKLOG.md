@@ -652,3 +652,51 @@ Not done:
   until it does
 
 ---
+
+## Tuesday, 25 August 2026 at 09:52 (UTC-04:00)
+
+Week 5, Day 6 — branch `deepu_branch`
+
+Error handling, validation and rate limiting. Committed as `2d97784`.
+
+- **There were no exception handlers at all**, so Neo4j down, Postgres refusing
+  connections and a missing API key all read as `500 Internal Server Error` —
+  indistinguishable from a defect. `app/core/errors.py` maps them to 503s naming
+  the store; a malformed Cypher query keeps its 500, because that one is ours
+- Every 500 carries a short `error_id` that is also in the log line. The
+  traceback never crosses the wire — it names paths, versions and query text
+- Validation errors report field names instead of FastAPI's default dump, which
+  echoes the submitted value back; for a body with credentials in a URL, that
+  echo lands in a log aggregator
+- **Rate limiting on `/chat`, `/impact/explain` and `/search`** — the three that
+  call a paid provider. Token bucket, not a fixed window: a window lets a caller
+  spend the allowance at the end of one and again at the start of the next.
+  Capacity above the refill rate is deliberate; three quick questions is normal
+  use. `Retry-After` set, since without it a client can only guess
+- Keyed on the forwarded address — behind a proxy `request.client.host` is the
+  proxy for everyone, one shared bucket for the world. Spoofable, which is fine
+  for stopping accidents. Should become the user id once auth exists
+- **Hardened `POST /repos`,** the one input that becomes a subprocess. Now
+  refuses embedded credentials (the URL is stored *and displayed*, so a pasted
+  token becomes visible to anyone who can see the repo list), private and
+  loopback addresses including `169.254.169.254`, oversized input and control
+  characters. `ALLOW_PRIVATE_GIT_HOSTS` re-enables private hosts deliberately
+- A leading dash was already blocked by requiring a scheme — which matters,
+  because `git clone <url> <dest>` passes the URL as argv and `--upload-pack=…`
+  would be an option rather than an address
+- Repository names validated too: a name reaches a filesystem path, a graph node
+  key and a Content-Disposition filename
+- Frontend: `ApiError` carries `retryAfter` and `errorId`; `ErrorNote` renders
+  them, styles a transient failure as a wait with a retry, and uses
+  `role="alert"`
+- 50 tests pass — both new modules are pure, needing no services. Lint clean,
+  frontend typechecks and builds
+
+Not done:
+
+- The 15-minute "try to break it" pass needs the app running; Docker is still
+  down, so the error paths are verified by unit test and by hand-exercising the
+  validator, not by driving the UI
+- Nothing pushed to the remote
+
+---
