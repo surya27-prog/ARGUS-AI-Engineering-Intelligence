@@ -794,3 +794,48 @@ Not done:
 - Nothing pushed to the remote
 
 ---
+
+## Tuesday, 25 August 2026 at 12:03 (UTC-04:00)
+
+Week 6, Day 2 — branch `deepu_branch`
+
+Deployment configuration. Committed as `08a1174`.
+
+Deployment itself needs accounts and a card on file, so the button-pressing is
+not something this repo can do. The day's real content turned out to be two bugs
+found by auditing for managed-service compatibility:
+
+- **The image hardcoded `--port 8000`.** Railway, Render and Fly all inject
+  `PORT` and expect the process to bind it — a fixed port means the first health
+  check fails and the deploy rolls back. Now `${PORT:-8000}`, via `sh -c` so it
+  expands and `exec` so uvicorn is PID 1. Without `exec`, SIGTERM hits `sh`,
+  uvicorn never sees it, and every deploy waits out the kill timeout
+- **Managed Postgres hands out a scheme that maps to the wrong driver.** Every
+  provider gives `postgres://` or `postgresql://`, and Render's Blueprint wires
+  `DATABASE_URL` straight from the database it creates. SQLAlchemy 2 maps both to
+  psycopg2, which is not installed — this project uses psycopg 3. Would have
+  failed at first connect with a driver error naming nothing useful.
+  `Settings.name_the_driver` rewrites it; verified against three formats
+
+Needed nothing: Neo4j Aura works unchanged because `neo4j+s://` carries TLS in
+the scheme and `core/graph.py` passes no `encrypted=` argument. Qdrant Cloud's
+API key was already wired.
+
+- `render.yaml` — primary target, because a Blueprint is a reviewable file rather
+  than dashboard clicks nobody can reconstruct. Declares Postgres, wires
+  `DATABASE_URL` from it, mounts a disk at `WORKSPACE_DIR` (without one every
+  restart re-clones everything), migrations as a pre-deploy command
+- `fly.toml` as the alternative. `auto_stop_machines = false` — a parse runs
+  minutes as a background task in the same process, so stopping on HTTP idle
+  would kill it mid-run. 1 GB, since the parse holds an AST in memory
+- `frontend/vercel.json`; `docs/deployment.md` with a symptom-to-cause table
+  where every row is a failure whose symptom points somewhere else
+
+Not done:
+
+- **Nothing is deployed.** No accounts, no public URL. The day's criterion is
+  "public URL loads and works"; the guide is the handover
+- The images still have never been built — Docker remains down
+- Nothing pushed to the remote
+
+---
