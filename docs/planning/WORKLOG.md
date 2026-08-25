@@ -886,3 +886,39 @@ Not done:
 - Nothing pushed to the remote
 
 ---
+
+## Tuesday, 25 August 2026 at 12:15 (UTC-04:00)
+
+Week 6, Day 4 — branch `deepu_branch`
+
+README rewrite. Committed as `b9dbc6e`. 113 lines → 298.
+
+- **The old README claimed LangChain and LlamaIndex** in its tech stack. Neither
+  is a dependency and neither ever was — exactly the claim an interviewer checks,
+  and finding it false costs more than the frameworks would have gained
+- Also stale: the clone URL named a different owner than `origin`, and "the
+  backend and frontend land in Week 1" was still there in Week 6
+- Added **"What makes it more than RAG over a repo"** near the top, because that
+  is the reader's question by line ten. Two answers: hybrid retrieval, and a
+  confidence on every inferred edge
+- Added a **design-decisions section** — chunk by symbol not token window, two
+  provider interfaces rather than one, no `temperature` because Opus 5 rejects it,
+  repository-relative debt thresholds, parse-keyed caches, a risk score that ships
+  its derivation. The part that makes a portfolio README worth reading is not what
+  was built but why it is shaped that way
+- Mermaid architecture diagram replacing ASCII art; features table matching
+  reality; API overview; the three-store split with what each answers
+- Added a **limitations section**: Python only, no type inference, module-scope
+  calls creating no edge, no auth, one parse at a time
+- Documentation index; all ten internal links verified to resolve
+- Corrected a figure I had asserted rather than measured — "about 400 lines" of
+  retrieval code is actually ~850
+
+Not done:
+
+- **Screenshots.** Left as an explicit placeholder with the commands to capture
+  them, rather than filled with mockups. The interface builds clean but nothing
+  has been run, so nothing has been captured
+- Nothing pushed to the remote
+
+---
