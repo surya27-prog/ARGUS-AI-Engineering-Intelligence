@@ -747,3 +747,50 @@ Week 5 is complete. Outstanding into Week 6:
 - `v0.1-parser` and `v0.5-rc` untagged
 
 ---
+
+## Tuesday, 25 August 2026 at 11:55 (UTC-04:00)
+
+Week 6, Day 1 — branch `deepu_branch`
+
+Production images and prod compose. Committed as `e23d47a`.
+
+- **The backend image builds from the repository root**, not `backend/`: it needs
+  `parser/` (the sibling package put on `sys.path` at import time) and
+  `database/migrations`. `COPY ../parser` is not allowed, so the context is `.`
+  and the image mirrors the source layout — `/app`, `/parser`, `/database`
+- Multi-stage: the build stage installs into a virtualenv copied wholesale, so
+  the compiler toolchain and pip never reach the runtime image
+- `git` installed deliberately — the parser shells out to it to clone and read
+  history, so the image is broken without it. Plus `curl` for the healthcheck
+- Non-root at a fixed uid 10001, so volume ownership is predictable across hosts
+- Healthcheck hits `/health`, which always returns 200 — it checks the process is
+  serving, not that its dependencies are up. A probe failing on a Postgres blip
+  would restart a working container
+- Frontend uses Next `standalone` output. `NEXT_PUBLIC_API_URL` is a **build
+  arg**, since the compiler inlines it into the client bundle — it must be the
+  URL the browser resolves, so each target needs its own image
+- `docker-compose.prod.yml`: no default passwords (`${VAR:?message}`), the data
+  stores publish nothing, migrations are a one-shot service the API waits on with
+  `service_completed_successfully`, Neo4j's healthcheck uses `cypher-shell`
+  because that image has no curl
+- **Found and fixed a leak risk:** `.gitignore` covered `.env` and `.env.local`
+  but not `.env.prod` — which `.env.prod.example` tells you to create and fill
+  with production secrets. Now `.env.*` with the templates negated back
+
+Verified without Docker:
+
+- `docker compose config` parses clean with values set
+- the guards fail closed: missing `POSTGRES_USER` aborts with its named message
+- every `COPY` source resolves in its context
+- the frontend produces `.next/standalone/server.js`
+- all three secret files ignored, all three templates tracked
+
+Not done:
+
+- **The images have never been built or run.** The day's criterion is "full stack
+  runs from prod compose locally" and Docker Desktop is down, so that is
+  unverified. Added to `docs/release-checklist.md`'s stack-blocked section by
+  implication; the build itself is one command once Docker is back
+- Nothing pushed to the remote
+
+---
