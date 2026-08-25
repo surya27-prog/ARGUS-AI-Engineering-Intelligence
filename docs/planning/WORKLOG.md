@@ -922,3 +922,44 @@ Not done:
 - Nothing pushed to the remote
 
 ---
+
+## Tuesday, 25 August 2026 at 12:23 (UTC-04:00)
+
+Week 6, Day 5 — branch `deepu_branch`
+
+Documentation. Committed as `f811f34`.
+
+- `docs/api/` had been a `.gitkeep` since Week 1 and was the one genuine gap. The
+  architecture deep-dive, design decisions and known limitations already existed
+  across `overview.md`, `graph-schema.md`, `rag-design.md`, `risk-model.md` and
+  the README — duplicating them would have created two versions to keep in step
+- **`docs/api/openapi.json` is generated**, by `scripts/export_openapi.py`, with
+  sorted keys so a regeneration gives a stable diff and a surface change shows up
+  in review. 25 operations, 23 paths. A hand-written reference drifts the first
+  time a parameter changes
+- `docs/api/README.md` covers what the schema cannot: the pagination envelope and
+  why `total` precedes the page; the single error shape and its status table (a
+  503 is not a 500 — a down dependency is actionable); which three endpoints cost
+  money and their buckets; and confidence as part of the answer — the four
+  `CALLS` resolutions, why dead code caps at 0.75, why an ambiguous call site
+  produces no edge
+- **Every number in it verified against the code**, not recalled: rate limits read
+  off the limiter objects, confidences off `call_resolver`
+- Added **Future scope** to the README, ordered by what each item would add. First
+  entry is the one the code is already set up for and nothing uses —
+  `SourceFile.sha256` exists so a re-parse can skip unchanged files, which would
+  cut the slowest and only paid stage
+- Removed two stale `.gitkeep` files from directories that now have content
+
+Worth recording:
+
+- Partway through, an OpenAPI introspection showed only 9 endpoints with
+  `app/api/graph.py` apparently missing. The shell's working directory had fallen
+  back to the stale `Downloads` copy, frozen at Week 1. Nothing was wrong — but
+  that copy has now caused two false alarms and is worth deleting
+
+Not done:
+
+- Nothing pushed to the remote
+
+---
