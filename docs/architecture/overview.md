@@ -1,7 +1,7 @@
 # ARGUS — Architecture Overview
 
-**Status:** end of Week 2 (knowledge graph). This document describes what exists
-today and the seams the later weeks plug into. It is updated as the system
+**Status:** end of Week 5 (feature freeze). This document describes what exists
+today and the seams the remaining week plugs into. It is updated as the system
 grows, not rewritten.
 
 The graph's own design — node labels, edge properties, key formats, the
@@ -38,6 +38,8 @@ flowchart LR
         RES["resolvers<br/>imports · calls · bases"]
         GW["graph writer"]
         GQ["graph queries"]
+        RET["retrieval<br/>vector + graph"]
+        CHK["chunking<br/>+ embedding"]
     end
 
     subgraph parser["parser/ — standalone package"]
@@ -59,10 +61,14 @@ flowchart LR
     REST --> PG
     SVC --> RES --> GW --> NEO
     REST --> GQ --> NEO
-    EXT -.->|Week 3| QD
+    SVC --> CHK --> QD
+    REST --> RET --> QD
+    RET --> GQ
 ```
 
-Solid arrows exist today. The dotted arrow is Week 3.
+Every arrow exists. `RET --> GQ` is the hybrid retrieval path: a vector hit
+is expanded through the call graph before it reaches the model, which is the
+one thing here that neither store could do alone.
 
 ---
 
@@ -97,6 +103,18 @@ the repo-root `.env` through a single cached `Settings` object; nothing reads
 | `services/graph_writer.py` | `ParsedRepo` → Neo4j, idempotently, with stamp-and-sweep. |
 | `services/graph_queries.py` | Everything read back out: the graph views and the traversals. |
 | `services/graph_keys.py` | The four node key formats, in one place so a key can only be spelled one way. |
+| `services/providers/` | Two interfaces — `ChatProvider` and `EmbeddingProvider` — and their implementations. Chat and embeddings are independent choices because Anthropic has no embeddings endpoint. The stub and hash providers are what let CI run with no API key. |
+| `services/chunking.py` | Symbol-level chunks — body plus docstring plus a path header — rather than fixed token windows. |
+| `services/retrieval.py`, `hybrid.py` | Vector search, then expansion through the call graph. |
+| `services/chat.py` | Prompt assembly, streaming, citations, conversation history. |
+| `services/impact.py`, `impact_explain.py` | Blast radius with per-hop decay, and the prose reading of it. |
+| `services/cochange.py` | `git log` → co-change pairs. The only edges not derived from the code. |
+| `services/risk.py` | Blast radius, coverage, centrality, coupling and churn → 0-100, with the derivation attached. |
+| `services/debt/` | Five detectors, calibrated on each repository's own distribution, plus the report and its Markdown export. |
+| `core/cache.py` | Parse-scoped cache for the three whole-repository reads, keyed on `parsed_at`. |
+| `core/errors.py` | One error shape; a dependency being down is a 503 that names it, not an opaque 500. |
+| `core/ratelimit.py` | Token buckets on the three endpoints that call a paid provider. |
+| `core/giturl.py` | Validation for the one input that becomes a `git clone` argument. |
 | `core/graph.py` | Driver lifecycle and the constraint/index bootstrap. |
 
 The three resolvers are **pure functions of the parse result** — they import
@@ -251,6 +269,14 @@ dependency endpoint return an empty result with nothing to explain why.
 | `GET` | `/repos/{id}/graph/search` | Find a node key by name, path or qualname. |
 | `GET` | `/repos/{id}/dependencies` | What a node needs, `?depth=1..5`. |
 | `GET` | `/repos/{id}/dependents` | What needs it — the blast radius. |
+| `GET` | `/repos/{id}/search` | Semantic search. `?mode=hybrid` expands hits through the call graph. Rate limited. |
+| `POST` | `/repos/{id}/chat` | Streams a grounded answer as SSE, with citations. `focus_key` pulls a blast radius into the context. Rate limited. |
+| `GET` | `/repos/{id}/conversations` | Paginated, without the turns. |
+| `GET` | `/repos/{id}/impact` | Ranked blast radius with the route to each node. |
+| `GET` | `/repos/{id}/impact/explain` | The same radius in prose. Rate limited. |
+| `GET` | `/repos/{id}/cochange` | Files that historically change together. |
+| `GET` | `/repos/{id}/risk` | Risk scores with their factors, weights and reasons. |
+| `GET` | `/repos/{id}/debt` | Ranked findings, or the whole scan as Markdown with `?format=markdown`. |
 
 List endpoints return `{items, total, limit, offset}`. The `total` is what lets
 the UI say "showing 500 of 807" instead of quietly truncating. `/graph` returns
@@ -302,8 +328,22 @@ not already have, hopped through on every import traversal.
 
 ## Deliberately deferred
 
-| Deferred | Until | Why |
+Rewritten at the Week 5 freeze: the rows that said "Week 3" or "Week 4" have
+happened, so what is left is what is genuinely still absent.
+
+| Deferred | Status | Why |
 |---|---|---|
+| Authentication | Dropped for this build | Offered as optional on Week 5 Day 5 and third in the scope-cut order. It adds no demo value, and the slack was better spent on hardening. The rate limiter keys on IP for the same reason — there is no user to key on yet. |
+| Multi-language parsing | Not planned | Python-only was the first scope cut. The extension point is one extension→language map plus an extractor per language. |
+| Real background workers | Not planned | `BackgroundTasks` handles one parse at a time and does not survive a restart. `ParseJob` rows exist to be picked up by a real queue whenever one is worth adding. |
+| Type inference | Not planned | `self.client.get()` cannot be resolved without knowing the type of `self.client`. The confidence model exists precisely so this gap is countable rather than hidden. |
+| Module-scope call edges | Known gap | `call_resolver` skips call sites with no enclosing function, so `_init()` at module scope creates no `CALLS` edge and its target reads as dead code. Fixing it means letting a `:File` be the source of a `CALLS` edge — a schema change. Until then no dead-code finding exceeds 0.75 confidence. |
+| Skipping unchanged files on re-parse | Known gap | `SourceFile.sha256` exists precisely to allow it, and nothing uses it. The vector pass re-embeds every symbol on every parse; this is the largest available saving. |
+| A shared cache | Not planned | `core/cache.py` is per-process, so it is lost on restart and not shared between workers. The alternative is Redis in the stack for something that only saves recomputation. |
+| Generated API types | Week 6 | `frontend/src/lib/api.ts` is hand-written against the schemas. The OpenAPI document could generate it. |
+| The parser as a real install | Week 6 | The backend puts the sibling package on `sys.path` at import time, in the one module that imports it. |
+
+---|---|---|
 | Authentication | Week 5 | Adds no demo value; roughly half a day whenever it is wanted. |
 | Multi-language parsing | Possibly never | Python-only is the first scope cut if the schedule slips. The extension point is one extension→language map plus an extractor. |
 | Real background workers | Week 5 | FastAPI `BackgroundTasks` is enough for one parse at a time and does not survive a restart. `ParseJob` rows now exist to be picked up by a real queue whenever one is worth adding. |

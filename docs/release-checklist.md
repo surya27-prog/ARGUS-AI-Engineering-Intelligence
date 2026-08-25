@@ -1,0 +1,105 @@
+# Release checklist — v0.5-rc onward
+
+Week 5 ended in a **feature freeze**: nothing new after Day 6. What remains is
+verification, deployment and documentation.
+
+This file exists because a long stretch of Week 5 was built while the local
+Docker stack was down, and the difference between "written and reviewed" and
+"observed working" is the difference between a release candidate and a hope. Each
+box below is something nobody has watched happen yet.
+
+---
+
+## Blocked on the stack coming back
+
+Everything here needs `docker compose up -d`. Run them in this order — each one
+depends on the last.
+
+- [ ] **Apply the two pending migrations.** `0cc6131ac5a6` (symbol complexity)
+      and `4e21c7b9a30f` (per-stage parse timings) were written against a dead
+      database, and `4e21c7b9a30f` is hand-written because `--autogenerate` needs
+      a live connection to diff against.
+      ```bash
+      cd backend && .venv/Scripts/python.exe -m alembic upgrade head
+      ```
+- [ ] **Run the whole backend suite.** It has not run in full since Week 5 Day 1.
+      Roughly 15 tests from Days 2–3 have never executed at all — they collect
+      cleanly, which is not the same thing.
+      ```bash
+      cd backend && .venv/Scripts/python.exe -m pytest -q
+      ```
+- [ ] **Re-parse the fixture repository.** Symbols stored before
+      `0cc6131ac5a6` carry the backfilled complexity of 1, so every
+      complexity finding on them is wrong until a re-parse overwrites it.
+- [ ] **Fill in `docs/performance.md`.** Its tables are deliberately empty. One
+      run of the profiler produces both of them.
+      ```bash
+      cd backend && LLM_PROVIDER=stub EMBEDDING_PROVIDER=hash \
+        .venv/Scripts/python.exe scripts/profile_pipeline.py
+      ```
+- [ ] **Confirm the 1,000-file target.** The Week 5 goal was a 1,000-file
+      repository parsed in under five minutes. `psf/requests` is 37 files, so
+      nothing measured so far speaks to it. Needs a genuinely large fixture.
+- [ ] **Check the coverage floor.** CI gates at 60%. The only measurement so far
+      is 44% from the 35 service-free tests — a tenth of the suite — so the real
+      figure is unknown, and the gate may need moving in either direction.
+
+## Blocked on a push
+
+- [ ] **Push the branch.** Nothing has ever been pushed, so CI has never run and
+      the README badge reads "no status". This single action verifies the backend
+      CI job, the service containers, the migration step and the coverage gate at
+      once.
+      ```bash
+      git push origin deepu_branch --follow-tags
+      ```
+- [ ] **Reconcile the repository URL.** `TIMELINE.md` names
+      `DeepuChandru/ARGUS-AI-Engineering-Intelligence`; `origin` is
+      `surya27-prog/ARGUS-AI-Engineering-Intelligence`. The CI badge follows
+      `origin`. One of the two is wrong.
+
+## Blocked on a browser
+
+- [ ] **Graph interactivity.** Week 4 Day 5's criterion — "click a function, see
+      it light up its dependents" — is verified at the data layer and has never
+      been seen rendered. The Chrome extension disconnected mid-session.
+- [ ] **The dashboard against live data.** Verified by rendering a static harness
+      with the real CSS and measuring it (no overflow, `scrollWidth ==
+      clientWidth`). Never rendered against the API.
+- [ ] **The 15-minute break-it pass.** Week 5 Day 6's actual acceptance test.
+      The error paths are unit-tested and the URL validator was exercised by
+      hand, but nobody has tried to break the running app. Worth trying
+      specifically: submit a URL to a repository that does not exist; delete a
+      repository mid-parse; hold refresh on the chat page to trip the limiter;
+      point at a repository with no Python in it.
+
+## Needs a decision, not a check
+
+- [ ] **`.env` does not exist on the dev machine.** Every setting falls back to
+      its default, which means `LLM_PROVIDER=anthropic` with an empty key — so
+      chat and impact explanations return 503 rather than answers. Real answers
+      need `cp .env.example .env` and a key. Everything verified so far used
+      `LLM_PROVIDER=stub` passed per-process.
+- [ ] **The Qdrant container is 1.12.5** while `docker-compose.yml` pins
+      `v1.19.0` and the client is 1.19.0 — a stale container from before the pin
+      moved. Recreating it may force a re-embed if the storage format changed.
+- [ ] **Whether to tag `v0.5-rc` before the above.** "Release candidate" claims
+      something is shippable. Tagging it while the suite has not run in full
+      would make the tag a false statement. Recommended order: unblock the stack,
+      work down the first section, then tag.
+
+---
+
+## Known gaps that are staying
+
+Not blockers — decisions, recorded so nobody spends Week 6 rediscovering them.
+All are in [architecture/overview.md](architecture/overview.md) with reasoning.
+
+| Gap | Consequence |
+|---|---|
+| Module-scope calls create no `CALLS` edge | Dead-code findings cap at 0.75 confidence and say why |
+| No auth | The rate limiter keys on IP, which one office NAT shares |
+| Re-parse re-embeds unchanged files | `SourceFile.sha256` exists to fix this; nothing uses it |
+| The cache is per-process | Lost on restart, not shared between workers |
+| Python only | One extension→language map plus an extractor per language |
+| No type inference | `self.client.get()` stays unresolved, and is counted rather than hidden |
