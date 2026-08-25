@@ -700,3 +700,50 @@ Not done:
 - Nothing pushed to the remote
 
 ---
+
+## Tuesday, 25 August 2026 at 11:22 (UTC-04:00)
+
+Week 5, Day 7 — branch `deepu_branch`
+
+Feature freeze. Committed as `f3be27c`.
+
+- The buffer day's intended job — clearing the verification backlog — is still
+  blocked on Docker, so it went on the two things owed that need no stack
+- **Refreshed `docs/architecture/overview.md`,** which still said "end of
+  Week 2". It described a system with no chat, retrieval, impact analysis, risk
+  score, debt detection or dashboard, and listed all of them as future work in
+  weeks that have since happened. Week 6 budgets a full day for the README and
+  another for docs, both building on that page
+- Diagram now carries the retrieval and embedding paths, including the
+  `retrieval → graph queries` edge that is the hybrid path
+- Component table covers the provider interfaces, chunking, retrieval, chat,
+  impact, co-change, risk, the debt package and the four Week 5 core modules;
+  API surface lists all eight endpoint groups
+- Deferred table **rewritten**, not appended to — half its rows said "Week 3" or
+  "Week 4" about things that now exist. It now also records the two gaps found by
+  building on it: module-scope calls creating no `CALLS` edge, and the re-parse
+  re-embedding unchanged files
+- **Added `docs/release-checklist.md`** — every box is something nobody has
+  watched happen, grouped by what unblocks it: the stack, a push, or a browser
+- Everything runnable passes: parser 92, backend 73 service-free, frontend
+  typechecks and builds, lint clean across all three
+
+Decision:
+
+- **Did not tag `v0.5-rc`.** "Release candidate" claims something is shippable,
+  and tagging it while the backend suite has not run in full since Day 1 would
+  make the tag a false statement about the code it points at. The checklist gives
+  the order: unblock the stack, work the first section, then tag
+
+Week 5 is complete. Outstanding into Week 6:
+
+- Two unapplied migrations; the backend suite unrun in full since Day 1; ~15
+  tests from Days 2–3 never executed
+- `docs/performance.md` tables empty; the 1000-file target unmeasured
+- CI has never run — nothing has ever been pushed
+- Three browser checks: graph interactivity, the dashboard on live data, and the
+  15-minute break-it pass
+- No `.env` on this machine, so chat needs `LLM_PROVIDER=stub` or a real key
+- `v0.1-parser` and `v0.5-rc` untagged
+
+---
