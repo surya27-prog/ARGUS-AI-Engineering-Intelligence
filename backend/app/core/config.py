@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +22,30 @@ class Settings(BaseSettings):
 
     # PostgreSQL
     database_url: str = "postgresql+psycopg://argus:argus_dev_password@localhost:5432/argus"
+
+    @field_validator("database_url")
+    @classmethod
+    def name_the_driver(cls, value: str) -> str:
+        """Rewrite a bare scheme to name psycopg explicitly.
+
+        Every managed Postgres hands out `postgres://…` or `postgresql://…`, and
+        Render's Blueprint wires `DATABASE_URL` straight from the database it
+        creates. SQLAlchemy 2 maps both of those to psycopg2, which is not
+        installed here — the project uses psycopg 3 — so the app would fail at
+        first connect with a driver error that says nothing about the cause.
+
+        Rewriting here rather than documenting "remember to edit the string" is
+        the difference between working on every provider and working on the ones
+        where somebody remembered.
+        """
+        for bare in ("postgresql+psycopg://", "postgresql+psycopg2://"):
+            if value.startswith(bare):
+                return value
+        if value.startswith("postgres://"):
+            return "postgresql+psycopg://" + value[len("postgres://") :]
+        if value.startswith("postgresql://"):
+            return "postgresql+psycopg://" + value[len("postgresql://") :]
+        return value
     # Seconds to wait for a Postgres connection before giving up.
     db_connect_timeout: int = 5
 

@@ -77,8 +77,17 @@ EXPOSE 8000
 # dependencies are up. A liveness probe that failed when Postgres blipped would
 # restart a container that is working correctly.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD curl --fail --silent --show-error http://localhost:8000/health || exit 1
+    CMD curl --fail --silent --show-error "http://localhost:${PORT:-8000}/health" || exit 1
 
-# No --reload, and no --workers: scaling by processes inside one container hides
+# **Binds `$PORT` when the platform sets one.** Railway, Render and Fly all
+# inject `PORT` and expect the process to listen on it; a hardcoded 8000 makes
+# their health checks fail and the deploy roll back. Falls back to 8000 so
+# compose and a plain `docker run` need no extra variable.
+#
+# `sh -c` so the variable expands, and `exec` so uvicorn replaces the shell as
+# PID 1 — without it SIGTERM reaches `sh`, uvicorn never sees it, and every
+# deploy waits out the platform's kill timeout instead of shutting down cleanly.
+#
+# No --reload and no --workers: scaling by processes inside one container hides
 # the failure of any single one from the platform. Scale containers instead.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
