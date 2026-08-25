@@ -30,6 +30,7 @@ from fastapi.responses import JSONResponse
 from neo4j.exceptions import Neo4jError, ServiceUnavailable
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
+from app.core.logging import current_request_id
 from app.services.providers import ProviderError
 
 logger = logging.getLogger(__name__)
@@ -119,12 +120,17 @@ def install_error_handlers(app: FastAPI) -> None:
 
 
 def _log_unexpected(request: Request, exc: BaseException) -> str:
-    """Log the traceback against a short id, and return the id.
+    """Log the traceback against the request id, and return it.
 
-    Eight hex characters: long enough not to collide within a log window, short
-    enough that someone can read it off a screen and type it into an issue.
+    Reuses the id the middleware already assigned rather than minting a second
+    one, so the id in the error response is the same string as in the access line
+    and the `X-Request-ID` header. Two ids for one failed request means correlating
+    them by timestamp, which is what an id was supposed to avoid.
+
+    Falls back to a fresh short id if something raised outside a request — a
+    startup failure, say — where no middleware has run.
     """
-    error_id = uuid.uuid4().hex[:8]
+    error_id = current_request_id() or uuid.uuid4().hex[:8]
     logger.exception(
         "Unhandled %s on %s %s [error_id=%s]",
         type(exc).__name__,
