@@ -13,9 +13,10 @@ against the code, and so publishing twice says the same thing.
 The post links to a repository and a live URL. Both have to work before anyone
 reads it.
 
-1. `git push origin deepu_branch --follow-tags` — 31 commits are local, including
-   `ci.yml`, so this is also the first time CI runs.
-2. CI green. A red badge on a freshly announced repository is worse than no
+1. ~~Push the branch.~~ Done on 25 August 2026: `394cd85..eb5999a` on
+   `surya27-prog`, with the `v0.4-impact` tag.
+2. CI green. The push above triggered the first run ever; nobody has read the
+   result. A red badge on a freshly announced repository is worse than no
    announcement.
 3. Deployed, with the URL loading and answering — Week 6 Days 2–3, still
    outstanding.
@@ -156,9 +157,7 @@ Nothing here can be done from a terminal.
       `main`), so if this is joint work the copyright line needs both names
 - [ ] Pin the repository on the GitHub profile
 - [ ] Publish the post, once all five gates above are met
-- [ ] Reconcile the repository URL: `TIMELINE.md` names
-      `DeepuChandru/ARGUS-AI-Engineering-Intelligence`, `origin` is
-      `surya27-prog/ARGUS-AI-Engineering-Intelligence`, and the README's CI badge
-      follows `origin`. Whichever is canonical, the other three references need to
-      match it — a broken badge on a pinned repository is the first thing a
-      visitor sees
+- [x] ~~Reconcile the repository URL.~~ `surya27-prog` is canonical; `TIMELINE.md`
+      and `SETUP.md` now match the README's badge. The `DeepuChandru/...` URL that
+      appeared in the docs was the fork account's old name, which GitHub
+      redirects — not a third repository

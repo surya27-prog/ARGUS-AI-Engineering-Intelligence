@@ -44,21 +44,24 @@ depends on the last.
       is 44% from the 35 service-free tests — a tenth of the suite — so the real
       figure is unknown, and the gate may need moving in either direction.
 
-## Blocked on a push
+## Pushed — 25 August 2026
 
-- [ ] **Push the branch.** The remote's `deepu_branch` sits at Week 4 Day 4
-      (`394cd85`); the 31 commits since are local only — including
-      `.github/workflows/ci.yml` itself, which is why CI has never run and the
-      README badge reads "no status". This single action verifies the backend CI
-      job, the service containers, the migration step and the coverage gate at
-      once.
-      ```bash
-      git push origin deepu_branch --follow-tags
-      ```
-- [ ] **Reconcile the repository URL.** `TIMELINE.md` names
-      `DeepuChandru/ARGUS-AI-Engineering-Intelligence`; `origin` is
-      `surya27-prog/ARGUS-AI-Engineering-Intelligence`. The CI badge follows
-      `origin`. One of the two is wrong.
+- [x] **The branch is pushed.** `394cd85..eb5999a` — 33 commits and the
+      `v0.4-impact` tag, on `surya27-prog/ARGUS-AI-Engineering-Intelligence`.
+      The first attempt failed with `permission denied`: Git Credential Manager
+      matched the credential keyed to bare `git:https://github.com` rather than
+      the account with write access. Putting the username in the URL selected the
+      right identity.
+- [x] **The repository URL is reconciled.** `surya27-prog` is canonical. `origin`
+      points there, the personal fork's remote has been removed, and
+      `TIMELINE.md` and `SETUP.md` — which both named a `DeepuChandru/...` URL —
+      now agree with the README's CI badge. That URL was never a third
+      repository: it is the old name of the fork's account, which GitHub
+      redirects.
+- [ ] **Read the CI result.** This push is the first time `ci.yml` has ever run,
+      and nobody has looked at the outcome. The coverage gate is the one to watch:
+      it is set to 60% and the only measurement so far is 44% from a tenth of the
+      suite, so a failure there is information rather than a defect.
 
 ## Blocked on a browser
 
