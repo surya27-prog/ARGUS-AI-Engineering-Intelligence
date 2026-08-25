@@ -284,11 +284,44 @@ More, with reasoning, in
 | [`architecture/graph-schema.md`](docs/architecture/graph-schema.md) | Node labels, edges, keys, the confidence model |
 | [`architecture/rag-design.md`](docs/architecture/rag-design.md) | Chunking, retrieval, the hybrid expansion |
 | [`architecture/risk-model.md`](docs/architecture/risk-model.md) | The scoring formula and its weights |
+| [`api/`](docs/api/README.md) | API conventions, and the generated OpenAPI schema |
 | [`deployment.md`](docs/deployment.md) | Managed services, and a symptom-to-cause table |
 | [`performance.md`](docs/performance.md) | Where a parse spends its time |
 | [`release-checklist.md`](docs/release-checklist.md) | What is verified and what is not |
 | [`planning/TIMELINE.md`](docs/planning/TIMELINE.md) | The six-week plan |
 | [`planning/WORKLOG.md`](docs/planning/WORKLOG.md) | What actually happened, day by day |
+
+---
+
+## Future scope
+
+In rough order of how much each would add, not of how hard it is.
+
+**Skip unchanged files on re-parse.** `SourceFile.sha256` is already recorded for
+exactly this and nothing reads it. A re-parse currently re-embeds every symbol,
+which is both the slowest stage and the only one that costs money — this is the
+largest single saving available.
+
+**A second language.** The parser's extension point is one extension→language map
+plus an extractor; everything downstream is language-agnostic already because the
+schema is. TypeScript would be the obvious next one, and would prove that claim
+or disprove it.
+
+**Module-scope call edges.** Letting a `:File` be the source of a `CALLS` edge
+would close the one known gap in the call graph, and raise the ceiling on
+dead-code confidence above 0.75.
+
+**Incremental analysis on a diff.** Everything is currently whole-repository. The
+interesting product is a GitHub App that comments a blast radius on a pull request
+— which needs impact scoped to changed symbols rather than recomputed.
+
+**Multi-repository.** Every key is repo-scoped by construction, so cross-repo
+edges are a schema change rather than a refactor. Worth it for a service graph
+across repositories that call each other over HTTP.
+
+**Auth, and a real queue.** Both deliberately cut. The rate limiter keys on IP
+because there is no user to key on; `ParseJob` rows exist for a worker to pick up.
+Neither is interesting work, and both are half a day when they matter.
 
 ---
 
