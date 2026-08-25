@@ -89,6 +89,13 @@ this file.
       up, and a chat answer with citation chips. Same session as the recording —
       the shots are frames of shots 4, 6 and 8.
 
+## Blocked on the GitHub UI
+
+- [ ] **Description, topics, website field, pin, and the post.** All five are
+      forms rather than commands. The text for each is written and the claims are
+      checked in [`launch.md`](launch.md), including which numbers are safe to
+      quote and which are not measured yet.
+
 ## Needs a decision, not a check
 
 - [ ] **`.env` does not exist on the dev machine.** Every setting falls back to

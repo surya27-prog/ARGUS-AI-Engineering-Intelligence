@@ -993,3 +993,39 @@ Not done:
 - Nothing pushed to the remote
 
 ---
+
+## Tuesday, 25 August 2026 at 12:51 (UTC-04:00)
+
+Week 6, Day 7 — branch `deepu_branch`
+
+- Added `LICENSE` (MIT). The README had claimed MIT since Week 6 Day 4 with no
+  file behind it; the README now links it
+- `docs/launch.md`: the repository description (247 of GitHub's 350 characters),
+  16 topics, the write-up post, and a one-paragraph CV version
+- The post leads with the question rather than the stack, and spends its middle on
+  the two claims worth defending — hybrid retrieval and per-edge confidence — plus
+  the 200-findings-to-9 circular-import story, which is the part that says
+  something about engineering rather than about libraries
+- Split the numbers into measured and not-yet-measured, so the post cannot quote
+  coverage, the 1,000-file target, or "passing tests" — none of which has been
+  observed. ~14,400 lines of application code, 475 tests across 26 files, 25 API
+  operations, all counted rather than recalled
+- Corrected two figures of my own while writing them up: the description was 247
+  characters not 218, and the line count 14,400 not 13,400 (the first count had
+  picked up `backend/.venv`)
+- `release-checklist.md`: corrected "nothing has ever been pushed" — the remote's
+  `deepu_branch` is at Week 4 Day 4 and 31 commits are unpushed. CI still has
+  never run, because `ci.yml` is one of the unpushed commits. Added a "Blocked on
+  the GitHub UI" section for the five form-only steps
+
+Not done:
+
+- Nothing pushed, nothing deployed, no post published. The launch doc lists the
+  five gates the post is behind, and the LICENSE holder needs confirming if this
+  is joint work — the history has one commit from another author
+
+This is the last day of the six-week plan. The features are complete and the
+documentation is complete; what is outstanding is verification and publication,
+all of it in `docs/release-checklist.md`.
+
+---

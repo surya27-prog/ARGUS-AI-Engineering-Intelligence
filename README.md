@@ -321,6 +321,7 @@ More, with reasoning, in
 | [`deployment.md`](docs/deployment.md) | Managed services, and a symptom-to-cause table |
 | [`performance.md`](docs/performance.md) | Where a parse spends its time |
 | [`demo-script.md`](docs/demo-script.md) | The walkthrough, shot by shot |
+| [`launch.md`](docs/launch.md) | Description, topics and the write-up, with the claims checked |
 | [`release-checklist.md`](docs/release-checklist.md) | What is verified and what is not |
 | [`planning/TIMELINE.md`](docs/planning/TIMELINE.md) | The six-week plan |
 | [`planning/WORKLOG.md`](docs/planning/WORKLOG.md) | What actually happened, day by day |
@@ -361,4 +362,4 @@ Neither is interesting work, and both are half a day when they matter.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
