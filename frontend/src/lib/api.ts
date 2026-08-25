@@ -119,9 +119,18 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** Seconds to wait, from a 429's Retry-After. Lets the UI say how long. */
+    readonly retryAfter?: number,
+    /** Correlation id from a 500, so a user can quote it in a bug report. */
+    readonly errorId?: string,
   ) {
     super(message);
     this.name = "ApiError";
+  }
+
+  /** True when waiting and retrying is the right response, rather than a fix. */
+  get isTransient(): boolean {
+    return this.status === 0 || this.status === 429 || this.status >= 503;
   }
 }
 
@@ -140,7 +149,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
-    throw new ApiError(await errorMessage(response), response.status);
+    throw await apiError(response);
   }
   if (response.status === 204) {
     return undefined as T;
@@ -148,19 +157,40 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-async function errorMessage(response: Response): Promise<string> {
+/**
+ * Build an ApiError from a failed response.
+ *
+ * Reads the two things the API adds beyond a message: `Retry-After` on a 429, so
+ * the UI can say how long to wait instead of inviting an immediate retry that
+ * fails again; and `error_id` on a 500, which also appears in the server log, so
+ * "it broke" becomes "it broke, id 7f3a9c21".
+ */
+async function apiError(response: Response): Promise<ApiError> {
+  const header = response.headers.get("retry-after");
+  const retryAfter = header ? Number(header) : undefined;
+
+  let detailText: string | undefined;
+  let errorId: string | undefined;
   try {
     const body = await response.json();
+    errorId = typeof body?.error_id === "string" ? body.error_id : undefined;
     const detail = body?.detail;
-    if (typeof detail === "string") return detail;
-    // FastAPI validation errors arrive as a list of {loc, msg}.
-    if (Array.isArray(detail)) {
-      return detail.map((d: { msg?: string }) => d.msg ?? "invalid input").join("; ");
+    if (typeof detail === "string") {
+      detailText = detail;
+    } else if (Array.isArray(detail)) {
+      // FastAPI validation errors arrive as a list of {loc, msg}.
+      detailText = detail.map((d: { msg?: string }) => d.msg ?? "invalid input").join("; ");
     }
   } catch {
-    // fall through to the status text
+    // Not JSON — fall through to the status line.
   }
-  return `${response.status} ${response.statusText}`;
+
+  return new ApiError(
+    detailText ?? `${response.status} ${response.statusText}`,
+    response.status,
+    Number.isFinite(retryAfter) ? retryAfter : undefined,
+    errorId,
+  );
 }
 
 export const api = {
@@ -233,7 +263,7 @@ export const api = {
       throw new ApiError(`Cannot reach the ARGUS API at ${API_URL}. Is it running?`, 0);
     }
     if (!response.ok) {
-      throw new ApiError(await errorMessage(response), response.status);
+      throw await apiError(response);
     }
     if (!response.body) {
       throw new ApiError("The server returned no stream", 0);

@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import chat, cochange, debt, graph, health, impact, repos, risk, search
 from app.core.config import get_settings
+from app.core.errors import install_error_handlers
 from app.core.graph import close_driver
 
 settings = get_settings()
@@ -33,6 +34,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Registered before the routers so a failure inside any of them is caught.
+install_error_handlers(app)
 
 app.include_router(health.router)
 app.include_router(repos.router)

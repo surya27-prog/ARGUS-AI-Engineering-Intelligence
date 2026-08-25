@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { api, ApiError, type Repository } from "@/lib/api";
+import ErrorNote from "@/components/ErrorNote";
+import { api, type Repository } from "@/lib/api";
 
 const POLL_MS = 1500;
 
@@ -11,7 +12,7 @@ export default function HomePage() {
   const [repos, setRepos] = useState<Repository[]>([]);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [loaded, setLoaded] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -21,7 +22,7 @@ export default function HomePage() {
       setRepos(page.items);
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : String(err));
+      setError(err);
     } finally {
       setLoaded(true);
     }
@@ -49,7 +50,7 @@ export default function HomePage() {
       setUrl("");
       await refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : String(err));
+      setError(err);
     } finally {
       setBusy(false);
     }
@@ -64,7 +65,7 @@ export default function HomePage() {
       await api.uploadRepository(file);
       await refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : String(err));
+      setError(err);
     } finally {
       setBusy(false);
       if (fileInput.current) fileInput.current.value = "";
@@ -76,7 +77,7 @@ export default function HomePage() {
       await api.deleteRepository(id);
       await refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : String(err));
+      setError(err);
     }
   }
 
@@ -110,7 +111,7 @@ export default function HomePage() {
           />
         </div>
 
-        {error && <p className="error">{error}</p>}
+        <ErrorNote error={error} onRetry={() => void refresh()} onDismiss={() => setError(null)} />
       </section>
 
       <section className="panel">

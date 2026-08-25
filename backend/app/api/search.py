@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.ratelimit import require_search_quota
 from app.models import Repository
 from app.services.hybrid import hybrid_search
 from app.services.providers import ProviderError
@@ -40,7 +41,11 @@ class SearchResponse(BaseModel):
     from_graph: int = Field(description="hits similarity alone would not have found")
 
 
-@router.get("/search", response_model=SearchResponse)
+@router.get(
+    "/search",
+    response_model=SearchResponse,
+    dependencies=[Depends(require_search_quota)],
+)
 def semantic_search(
     repository_id: uuid.UUID,
     db: Session = Depends(get_db),

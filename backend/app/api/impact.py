@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.ratelimit import require_explain_quota
 from app.models import Repository
 from app.schemas.impact import ImpactExplanationResponse, ImpactResponse
 from app.services.graph_queries import MAX_DEPTH, NodeNotFound
@@ -56,7 +57,11 @@ def get_impact(
     )
 
 
-@router.get("/impact/explain", response_model=ImpactExplanationResponse)
+@router.get(
+    "/impact/explain",
+    response_model=ImpactExplanationResponse,
+    dependencies=[Depends(require_explain_quota)],
+)
 def explain(
     repository_id: uuid.UUID,
     db: Session = Depends(get_db),

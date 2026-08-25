@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     # Parser
     workspace_dir: str = "./workspace"
     max_repo_size_mb: int = 500
+    # `POST /repos` clones whatever URL it is given, so a private or
+    # loopback address is refused by default — a server that fetches
+    # arbitrary internal addresses on request can be used to read them.
+    # Turn this on only when pointing ARGUS at a git server on your own
+    # network.
+    allow_private_git_hosts: bool = False
     parse_timeout_seconds: int = 900
 
     # Git history / co-change. `history_depth` is how many commits a clone

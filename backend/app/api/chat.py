@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal, get_db
+from app.core.ratelimit import require_chat_quota
 from app.models import ChatMessage, Conversation, Repository
 from app.schemas.repository import Page
 from app.services.chat import stream_answer
@@ -75,7 +76,7 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
-@router.post("/chat")
+@router.post("/chat", dependencies=[Depends(require_chat_quota)])
 def chat(
     repository_id: uuid.UUID,
     payload: ChatRequest,
