@@ -125,25 +125,33 @@ One paragraph, no links:
 
 ## Numbers, and which are safe to quote
 
-Measured, as of Week 6 Day 7:
+Measured, as of 11 September 2026:
 
 | | |
 |---|---|
 | Application code | ~14,400 lines (backend 9.3k, parser 1.9k, frontend 2.8k, migrations 0.4k) |
-| Tests | 475 across 26 files, ~7.6k lines |
+| Tests | **531 collected, all passing** — 439 backend, 92 parser |
+| Test coverage | **90%** of the backend's `app` — 3,439 statements, 274 missed |
 | API operations | 25 across 23 paths |
 | Debt detectors | 5 |
 
-**Do not quote these yet** — nothing has measured them:
+Measured on 11 September 2026 against live Postgres, Neo4j and Qdrant. "439
+passing tests at 90% coverage" is now a claim about a run that happened — it was
+not on 25 August, when this section said not to make it.
 
-- test coverage (CI gates at 60%; the only datapoint is 44% from a tenth of the
-  suite)
+**Still do not quote these** — nothing has measured them:
+
 - "1,000 files in under five minutes" — the Week 5 target, never run against a
   repository that size
-- "all tests passing" — the suite has not run in full since Week 5 Day 1
+- anything about the deployed service. There isn't one yet
 
-Say "475 tests" if you like; it is a count of what exists. "475 passing tests" is
-a claim about a run that has not happened.
+The earlier "475 tests" in this file was a count of `def test_` lines across both
+packages (393 backend, 83 parser). Collection returns more than that, because
+parametrised tests are one definition and several cases. Quote the collected
+number — it is what a reader gets when they run it.
+
+The backend figure was verified locally against all three stores; the parser
+suite is verified by its own CI job, which has been green throughout.
 
 ---
 

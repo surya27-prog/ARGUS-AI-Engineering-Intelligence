@@ -15,19 +15,15 @@ box below is something nobody has watched happen yet.
 Everything here needs `docker compose up -d`. Run them in this order — each one
 depends on the last.
 
-- [ ] **Apply the two pending migrations.** `0cc6131ac5a6` (symbol complexity)
-      and `4e21c7b9a30f` (per-stage parse timings) were written against a dead
-      database, and `4e21c7b9a30f` is hand-written because `--autogenerate` needs
-      a live connection to diff against.
-      ```bash
-      cd backend && .venv/Scripts/python.exe -m alembic upgrade head
-      ```
-- [ ] **Run the whole backend suite.** It has not run in full since Week 5 Day 1.
-      Roughly 15 tests from Days 2–3 have never executed at all — they collect
-      cleanly, which is not the same thing.
-      ```bash
-      cd backend && .venv/Scripts/python.exe -m pytest -q
-      ```
+- [x] **Apply the two pending migrations.** Done 11 September 2026. Both applied
+      cleanly, including the hand-written `4e21c7b9a30f` that had never run
+      anywhere. CI's `Migrate` step passes too, so the chain works from empty.
+- [x] **Run the whole backend suite.** Done 11 September 2026: **439 passed, 0
+      failed**, against live Postgres, Neo4j and Qdrant. It found two real
+      problems, which is what a suite that has never run in full is for — the
+      conversations test iterated a pagination envelope (`8661795`), and a
+      filtered debt report carried the unfiltered tallies, so it contradicted
+      its own header (`5730984`).
 - [ ] **Re-parse the fixture repository.** Symbols stored before
       `0cc6131ac5a6` carry the backfilled complexity of 1, so every
       complexity finding on them is wrong until a re-parse overwrites it.
@@ -40,9 +36,23 @@ depends on the last.
 - [ ] **Confirm the 1,000-file target.** The Week 5 goal was a 1,000-file
       repository parsed in under five minutes. `psf/requests` is 37 files, so
       nothing measured so far speaks to it. Needs a genuinely large fixture.
-- [ ] **Check the coverage floor.** CI gates at 60%. The only measurement so far
-      is 44% from the 35 service-free tests — a tenth of the suite — so the real
-      figure is unknown, and the gate may need moving in either direction.
+- [x] **Check the coverage floor.** Measured 11 September 2026: **90%** of
+      `app` (3,439 statements, 274 missed, 626 branches). The earlier 44% came
+      from the 35 service-free tests — a tenth of the suite — and was never the
+      real figure.
+
+      The 60% gate is therefore slack by thirty points, and a gate with that much
+      room in it will not notice a regression. Worth raising `COVERAGE_FLOOR`
+      (repo **Settings → Secrets and variables → Actions → Variables**) to
+      something just under the measured number — 85% leaves room for a legitimate
+      dip without waving through a collapse. Set it as a variable rather than in
+      `ci.yml`, which is what `${{ vars.COVERAGE_FLOOR || 60 }}` is already for.
+
+      The thinnest files, if you want the number to go up rather than the gate to
+      come down: `providers/openai_embeddings.py` 36%, `providers/anthropic_chat.py`
+      58%, `services/retrieval.py` 62%. The two providers are thin because their
+      tests run against the stub and hash providers, which is deliberate — CI has
+      no API key.
 
 ## Pushed — 25 August 2026
 
@@ -58,10 +68,14 @@ depends on the last.
       now agree with the README's CI badge. That URL was never a third
       repository: it is the old name of the fork's account, which GitHub
       redirects.
-- [ ] **Read the CI result.** This push is the first time `ci.yml` has ever run,
-      and nobody has looked at the outcome. The coverage gate is the one to watch:
-      it is set to 60% and the only measurement so far is 44% from a tenth of the
-      suite, so a failure there is information rather than a defect.
+- [ ] **Read the CI result for `5730984`.** The two earlier runs failed, both at
+      the `Test` step and nowhere else — Install, Lint, the service wait and
+      Migrate were green throughout. Both failures are fixed and the suite passes
+      locally, so this run is expected green; it has not been read yet.
+
+      Note that CI's Qdrant starts from no volume, so the 16 local failures that
+      came from a stale one never appear there. A green CI run and a green local
+      run are not quite measuring the same thing.
 
 ## Blocked on a browser
 
@@ -106,13 +120,20 @@ this file.
       chat and impact explanations return 503 rather than answers. Real answers
       need `cp .env.example .env` and a key. Everything verified so far used
       `LLM_PROVIDER=stub` passed per-process.
-- [ ] **The Qdrant container is 1.12.5** while `docker-compose.yml` pins
-      `v1.19.0` and the client is 1.19.0 — a stale container from before the pin
-      moved. Recreating it may force a re-embed if the storage format changed.
-- [ ] **Whether to tag `v0.5-rc` before the above.** "Release candidate" claims
-      something is shippable. Tagging it while the suite has not run in full
-      would make the tag a false statement. Recommended order: unblock the stack,
-      work down the first section, then tag.
+- [x] **~~The Qdrant container is 1.12.5.~~** Resolved 11 September 2026, and the
+      re-embed this warned about was the least of it: `v1.19.0` does not merely
+      ignore the old data, it **panics on startup** reading it —
+      `unknown variant 'on_disk', expected 'mmap' or 'in_ram_mmap'` — and
+      crash-loops. Sixteen tests failed on a connection refused that looked
+      nothing like a storage-format problem. Fixed by dropping the
+      `argus_qdrant_data` volume; vectors are derived, so a re-parse restores
+      them. Worth knowing before anyone points a deployment at an old volume.
+- [ ] **Whether to tag `v0.5-rc`.** The objection that blocked this is gone: the
+      suite has now run in full and passes, at 90% coverage, against all three
+      live stores. What is still unobserved is the deployed article — no public
+      URL, no production smoke test, nothing rendered in a browser against live
+      data. That is a fair thing to call a release candidate, and an unfair thing
+      to call released. Reasonable to tag once CI is green on `5730984`.
 
 ---
 
