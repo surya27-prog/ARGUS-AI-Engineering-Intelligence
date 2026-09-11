@@ -1,16 +1,42 @@
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import health
+from app.api import chat, cochange, debt, graph, health, impact, repos, risk, search
 from app.core.config import get_settings
+from app.core.errors import install_error_handlers
+from app.core.graph import close_driver
+from app.core.logging import RequestContextMiddleware, configure_logging
 
 settings = get_settings()
+
+# Before anything else: every module-level logger created below this point
+# inherits the root handler installed here. JSON in production because a log
+# aggregator wants one object per line, plain text locally because a human does
+# not.
+configure_logging(settings.log_level, json_output=settings.app_env == "production")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
+    yield
+    # The Neo4j driver holds a connection pool; Postgres' is torn down by
+    # SQLAlchemy's own atexit handling.
+    close_driver()
+
 
 app = FastAPI(
     title="ARGUS API",
     description="AI Engineering Intelligence Platform",
     version="0.1.0",
+    lifespan=lifespan,
 )
+
+# Outermost, so the request id exists before CORS or any handler runs and every
+# log line from the request carries it — including one rejected by CORS.
+app.add_middleware(RequestContextMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,7 +46,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Registered before the routers so a failure inside any of them is caught.
+install_error_handlers(app)
+
 app.include_router(health.router)
+app.include_router(repos.router)
+app.include_router(graph.router)
+app.include_router(search.router)
+app.include_router(chat.router)
+app.include_router(impact.router)
+app.include_router(cochange.router)
+app.include_router(risk.router)
+app.include_router(debt.router)
 
 
 @app.get("/", include_in_schema=False)

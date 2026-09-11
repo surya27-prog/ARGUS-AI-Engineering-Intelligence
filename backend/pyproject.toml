@@ -11,11 +11,18 @@ dependencies = [
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.2",
     "alembic>=1.14",
+    "neo4j>=5.26",
+    # Required by FastAPI to accept the multipart zip upload on POST /repos/upload.
+    "python-multipart>=0.0.20",
+    "anthropic>=0.122.0",
+    "openai>=3.1.0",
+    "qdrant-client>=1.19.0",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3",
+    "pytest-cov>=6.0",
     "httpx>=0.27",
     "ruff>=0.8",
 ]
@@ -30,5 +37,32 @@ select = ["E", "F", "I", "UP", "B"]
 # declares dependencies (`db: Session = Depends(get_db)`).
 ignore = ["B008"]
 
+[tool.ruff.lint.isort]
+# `parser` is the sibling package in this repo, not the long-dead stdlib module
+# of the same name. Grouping it with `app` also keeps it sorted *after* `app`,
+# which matters: the path bootstrap that makes it importable lives in
+# `app/services/__init__.py`.
+known-first-party = ["app", "parser"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = [
+    # Timing harness, not application logic; it is exercised by being run.
+    "scripts/*",
+]
+
+[tool.coverage.report]
+# `if TYPE_CHECKING:` blocks and `...` protocol bodies never execute, and
+# counting them against the score makes the number measure annotation style
+# rather than test coverage.
+exclude_also = [
+    'if TYPE_CHECKING:',
+    'raise NotImplementedError',
+    '@(abc\.)?abstractmethod',
+    '^\s*\.\.\.$',
+]
+show_missing = true

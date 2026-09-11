@@ -1,0 +1,27 @@
+[project]
+name = "argus-parser"
+version = "0.1.0"
+description = "ARGUS repository parser — ingestion, file inventory, AST extraction"
+requires-python = ">=3.11"
+# Deliberately stdlib-only: the parser runs in-process inside the backend and in
+# CI, so every dependency added here is one the API also has to carry.
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.8",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# Fixture files are deliberately odd — unused imports, relative imports beyond
+# top level, a syntax error. They are parsed, never imported or linted.
+extend-exclude = ["tests/fixtures"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

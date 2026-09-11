@@ -26,7 +26,7 @@ the CLI does not start the engine.
 ## Start the data stack
 
 ```bash
-git clone https://github.com/DeepuChandru/ARGUS-AI-Engineering-Intelligence.git
+git clone https://github.com/surya27-prog/ARGUS-AI-Engineering-Intelligence.git
 cd ARGUS
 cp .env.example .env
 docker compose up -d
