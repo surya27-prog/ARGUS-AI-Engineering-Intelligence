@@ -18,6 +18,8 @@ is a finding they will learn to ignore.
 
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -90,6 +92,26 @@ class Finding:
         return (SEVERITY_ORDER[self.severity], -self.confidence, self.subject)
 
 
+def tally(findings: Sequence[Finding]) -> tuple[dict[str, int], dict[str, int]]:
+    """Counts by kind and by severity for whatever set of findings is given.
+
+    Shared rather than written once per caller because a filtered report has to
+    recount. Carrying the whole scan's tallies into a filtered document produced
+    one that disagreed with itself — a header reading "1 findings" above a
+    breakdown describing five — and a report that contradicts itself is worse
+    than no report.
+
+    Severities keep their worst-first order and empty ones are dropped, so the
+    summary table never lists a row with nothing in it.
+    """
+    kinds = Counter(str(f.kind) for f in findings)
+    severities = Counter(f.severity for f in findings)
+    return (
+        dict(kinds.most_common()),
+        {str(s): severities[s] for s in SEVERITIES_WORST_FIRST if severities[s]},
+    )
+
+
 def percentile(values: list[float], fraction: float) -> float:
     """Nearest-rank percentile, so the result is always an observed value.
 
@@ -125,4 +147,5 @@ __all__ = [
     "Severity",
     "percentile",
     "severity_from_ratio",
+    "tally",
 ]

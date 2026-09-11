@@ -7,6 +7,8 @@ a real repository so the two representations are checked against one scan.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -324,9 +326,34 @@ def test_markdown_format_is_a_download(client: TestClient, scanned: Repository):
 
 def test_markdown_download_respects_filters(client: TestClient, scanned: Repository):
     response = client.get(f"/repos/{scanned.id}/debt?format=markdown&kind=circular_import")
+    document = response.text
+    _, findings = document.split("## Findings", 1)
 
-    assert "circular_import" in response.text
-    assert "missing_docstring" not in response.text
+    assert "circular_import" in findings
+    # Not `not in document`: "What was looked for" names every detector that
+    # ran, filtered out or not, because a detector missing from that list is how
+    # you tell an incomplete scan from a clean one.
+    assert "missing_docstring" not in findings
+
+
+def test_a_filtered_report_does_not_contradict_itself(client: TestClient, scanned: Repository):
+    """The counts describe the document, not the scan behind it.
+
+    `total` is derived from the findings list while `by_kind` was stored, so a
+    filtered report used to open with "1 findings" and then break that one
+    finding down into five.
+    """
+    document = client.get(
+        f"/repos/{scanned.id}/debt?format=markdown&kind=circular_import"
+    ).text
+    header, rest = document.split("## What was looked for", 1)
+    looked_for = rest.split("## Summary", 1)[0]
+
+    claimed = int(re.search(r"\*\*(\d+) findings\.\*\*", header).group(1))
+    counted = sum(int(n) for n in re.findall(r"— (\d+) finding", looked_for))
+
+    assert counted == claimed
+    assert "`missing_docstring` — 0 findings" in looked_for
 
 
 def test_download_filename_is_safe(client: TestClient, db: Session, scanned: Repository):

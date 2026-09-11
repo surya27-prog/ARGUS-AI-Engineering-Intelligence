@@ -8,7 +8,7 @@ two code paths that can disagree about what the repository's debt is.
 import logging
 import re
 import uuid
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import PlainTextResponse
@@ -18,7 +18,7 @@ from app.core.cache import debt_cache
 from app.core.database import get_db
 from app.models import ParseStatus, Repository
 from app.schemas.debt import DebtResponse
-from app.services.debt import ALL_KINDS, DebtKind, Severity, run_detectors
+from app.services.debt import ALL_KINDS, DebtKind, Severity, run_detectors, tally
 from app.services.debt.report import filter_findings, rollup_by_file, summary_dict, to_markdown
 
 logger = logging.getLogger(__name__)
@@ -135,13 +135,18 @@ def _validate_kinds(kind: list[str] | None) -> set[str] | None:
 def _replace_findings(report, findings):
     """A copy of the scan carrying only the filtered findings.
 
-    The Markdown renderer reads `ran` and `failed` off the report, so the
-    filtered document still says which detectors ran — dropping that to pass a
-    plain list would lose the part that makes an incomplete report legible.
-    """
-    from dataclasses import replace
+    `ran` and `failed` survive the copy: the filtered document still has to say
+    which detectors ran, because a detector that crashed reports zero findings
+    and that reads exactly like a clean result.
 
-    return replace(report, findings=findings)
+    The counts do not survive — they are recounted from what is left. `total` is
+    derived from `findings` while `by_kind` and `by_severity` were stored, so a
+    filtered document used to open with "1 findings" and then break that one
+    finding down into five. A report that disagrees with itself is worse than no
+    report.
+    """
+    by_kind, by_severity = tally(findings)
+    return replace(report, findings=findings, by_kind=by_kind, by_severity=by_severity)
 
 
 def _safe(name: str) -> str:

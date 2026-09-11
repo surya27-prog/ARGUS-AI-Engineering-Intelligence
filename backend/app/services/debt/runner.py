@@ -8,14 +8,13 @@ what was looked for as well as what was found.
 from __future__ import annotations
 
 import logging
-from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.services.debt.base import SEVERITIES_WORST_FIRST, DebtKind, Finding
+from app.services.debt.base import DebtKind, Finding, tally
 from app.services.debt.graph_detectors import detect_circular_imports, detect_dead_code
 from app.services.debt.postgres_detectors import (
     detect_complexity,
@@ -108,16 +107,11 @@ def run_detectors(
         f", {len(failed)} failed" if failed else "",
     )
 
+    by_kind, by_severity = tally(findings)
     return DebtReport(
         findings=findings,
-        by_kind=dict(Counter(str(f.kind) for f in findings).most_common()),
-        by_severity={
-            str(severity): count
-            for severity, count in (
-                (s, sum(1 for f in findings if f.severity == s)) for s in SEVERITIES_WORST_FIRST
-            )
-            if count
-        },
+        by_kind=by_kind,
+        by_severity=by_severity,
         failed=failed,
         ran=ran,
     )

@@ -15,6 +15,7 @@ from app.services.debt.base import (
     Severity,
     percentile,
     severity_from_ratio,
+    tally,
 )
 from app.services.debt.graph_detectors import detect_circular_imports, detect_dead_code
 from app.services.debt.postgres_detectors import (
@@ -50,5 +51,6 @@ __all__ = [
     "run_detectors",
     "severity_from_ratio",
     "summary_dict",
+    "tally",
     "to_markdown",
 ]
