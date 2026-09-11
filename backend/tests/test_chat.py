@@ -211,8 +211,10 @@ def test_conversations_are_listed_and_fetchable(
     db.add(conversation)
     db.commit()
 
+    # A page, not a bare list. Iterating the envelope yields its keys, so the
+    # assertion this replaces raised a TypeError the first time it ever ran.
     listed = client.get(f"/repos/{repository.id}/conversations").json()
-    assert any(c["id"] == str(conversation.id) for c in listed)
+    assert any(c["id"] == str(conversation.id) for c in listed["items"])
 
     fetched = client.get(f"/repos/{repository.id}/conversations/{conversation.id}").json()
     assert fetched["title"] == "t"
