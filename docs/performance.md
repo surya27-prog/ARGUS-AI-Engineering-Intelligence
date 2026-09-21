@@ -3,11 +3,10 @@
 **Target** (from the Week 5 plan): a 1,000-file repository parsed in under five
 minutes, and every list endpoint bounded.
 
-> **The measurement tables below are empty on purpose.** The work described here
-> was done during a session where the local Docker stack was down, so there are
-> no before-or-after figures yet. Filling them in is one command —
-> `scripts/profile_pipeline.py`, below. An empty table is honest; a table of
-> numbers nobody measured is not.
+> **Measured 21 September 2026** on `psf/requests` (37 files, 807 symbols), with
+> `scripts/profile_pipeline.py` against a local Docker stack — Postgres 16, Neo4j
+> 5.26, Qdrant v1.19.0 — on a Windows 11 development machine. These are one
+> machine's numbers, not a benchmark: quote the ratios, not the milliseconds.
 
 ---
 
@@ -58,16 +57,28 @@ The five stages, in order:
 
 ### Measured
 
-_Pending — run the script._
-
 | Stage | ms | % of parse |
 |---|---:|---:|
-| analyze | | |
-| store | | |
-| graph | | |
-| cochange | | |
-| vectors | | |
-| **total** | | |
+| analyze | 2,194 | 35.6% |
+| store | 285 | 4.6% |
+| graph | 1,214 | 19.7% |
+| cochange | 56 | 0.9% |
+| vectors | 2,411 | 39.1% |
+| **total** | **6,160** | 100% |
+
+**Nothing here needs optimising, and that is the useful result.** Six seconds for
+37 files leaves room against the five-minute target, and the two stages that
+dominate — parsing ASTs and embedding — are the two doing irreducible work.
+
+`vectors` at 39% is measured with the **hash** provider, so it is the chunking and
+the Qdrant upsert, not a model. With a real embedding provider this stage is
+dominated by that provider's latency and will grow far beyond the others, which is
+what makes the unused `SourceFile.sha256` re-parse skip the largest available
+saving.
+
+A second parse of the same repository recorded a different split — graph 5,077ms
+(47%) against vectors 2,206ms — on a cold Neo4j page cache. Warm and cold differ
+by roughly 4× on that stage, so a single run is a sample, not a measurement.
 
 ---
 
@@ -75,20 +86,32 @@ _Pending — run the script._
 
 ### Measured
 
-_Pending — run the script._
+Median of five calls, in-process via `TestClient`. The **worst** column is the
+first call of the five — a cold cache — which is why it is reported separately
+rather than averaged away.
 
 | Endpoint | median ms | worst ms |
 |---|---:|---:|
-| `GET /repos/{id}` | | |
-| `GET /files` (200) | | |
-| `GET /symbols` (200) | | |
-| `GET /graph` (files, 400) | | |
-| `GET /graph` (calls, 400) | | |
-| `GET /risk` (File, 120) | | |
-| `GET /risk` (Function, 10) | | |
-| `GET /debt` | | |
-| `GET /cochange` | | |
-| `GET /conversations` | | |
+| `GET /repos/{id}` | 11 | 36 |
+| `GET /files` (200) | 16 | 19 |
+| `GET /symbols` (200) | 26 | 29 |
+| `GET /graph` (files, 400) | 18 | 240 |
+| `GET /graph` (calls, 400) | 16 | 228 |
+| `GET /risk` (File, 120) | 18 | 741 |
+| `GET /risk` (Function, 10) | 15 | 586 |
+| `GET /debt` | 15 | 688 |
+| `GET /cochange` | 17 | 165 |
+| `GET /conversations` | 15 | 49 |
+
+**The gap between the two columns is the cache, and it is the whole argument for
+it.** `/risk` costs 741ms cold and 18ms warm — a 41× difference — because scoring
+reads the entire repository to answer one request. The dashboard asks for four of
+these on load, so without the cache every visit would pay two seconds; with it,
+only the first visit after a parse does.
+
+The endpoints that barely move — files, symbols, conversations — are the ones
+answered by a single indexed Postgres query, and they need no cache at all. That
+split is why the cache is on three endpoints rather than applied globally.
 
 ---
 

@@ -12,6 +12,34 @@ remembers about a library with a similar name.
 
 ---
 
+## Status
+
+Run end to end on 21 September 2026 against `psf/requests`, with Postgres, Neo4j
+and Qdrant live:
+
+| | |
+|---|---|
+| Parse | 37 files, 807 symbols — **6 seconds** |
+| Blast radius | `Session.request` → 7 dependents, each resolved `attribute_self` at 0.85 confidence |
+| Technical debt | 509 findings across 5 detectors, 0 failed — circular imports filtered from 200 to **9** |
+| Tests | **531 passing** — 439 backend, 92 parser |
+| Coverage | **90%** of the backend's `app` |
+| CI | green on all three jobs |
+
+**Not yet done, and said plainly:** nothing is deployed, so there is no public
+URL; the demo video and screenshots are scripted but not recorded; and the
+1,000-file performance target has never been measured. Everything outstanding is
+listed in [`docs/release-checklist.md`](docs/release-checklist.md) with what
+blocks it, rather than left for a reader to discover.
+
+Per-stage timings and endpoint latencies are in
+[`docs/performance.md`](docs/performance.md). The short version: a parse spends
+its time on ASTs and embeddings, and the three expensive read endpoints go from
+~700ms cold to ~18ms warm through a cache keyed on the parse.
+
+---
+
+
 ## The problem
 
 You join a codebase with a million lines in it. Before you can safely change
