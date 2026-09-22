@@ -204,6 +204,6 @@ Nothing was looking for problems yet — no debt detection, no dashboard, no
 caching, no CI. The scores existed but nothing aggregated them into "here is what
 is wrong with this repository", which is Week 5.
 
-**Next: Week 5 — technical debt, caching and hardening**, where the tool starts
-making judgements about code, and immediately has to learn restraint about how
-many. Not written yet.
+**Next: [Week 5 — technical debt, performance and hardening](week-5.md)**, where
+the tool starts making judgements about code, and immediately has to learn
+restraint about how many.

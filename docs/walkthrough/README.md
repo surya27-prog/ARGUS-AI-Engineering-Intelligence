@@ -19,8 +19,8 @@ with the stack is assumed.
 | 2 | The knowledge graph — Neo4j, Cypher, and the confidence model | [read](week-2.md) |
 | 3 | Retrieval and chat — embeddings, Qdrant, hybrid retrieval | [read](week-3.md) |
 | 4 | Impact, risk and the graph UI — blast radius, scoring, Cytoscape | [read](week-4.md) |
-| 5 | Technical debt, caching, CI and hardening | not written yet |
-| 6 | Deployment, documentation and shipping | not written yet |
+| 5 | Technical debt, caching, CI and hardening — and the 200-findings lesson | [read](week-5.md) |
+| 6 | Deployment, documentation and shipping — plus what testing the claims found | [read](week-6.md) |
 
 ## A note on the numbers
 
