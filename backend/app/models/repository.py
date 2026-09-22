@@ -4,9 +4,10 @@ from enum import StrEnum
 
 from sqlalchemy import DateTime, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.job import ParseJob
 
 
 class ParseStatus(StrEnum):
@@ -44,6 +45,13 @@ class Repository(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    jobs: Mapped[list[ParseJob]] = relationship(
+        back_populates="repository",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by=ParseJob.created_at.desc(),
+    )
 
     def __repr__(self) -> str:
         return f"<Repository {self.name} ({self.status})>"

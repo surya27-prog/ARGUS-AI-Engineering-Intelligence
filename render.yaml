@@ -1,0 +1,114 @@
+# ARGUS on Render — infrastructure as a reviewable file.
+#
+# Render is the primary target because a Blueprint is declarative: the deployment
+# is a file in the repository that can be diffed and reviewed, rather than a
+# sequence of dashboard clicks nobody can reconstruct later. `fly.toml` is here
+# as an alternative for anyone who prefers Fly.
+#
+#     Render dashboard → New → Blueprint → point at this repository
+#
+# What Render does NOT provide, and must be created separately (see
+# docs/deployment.md): Neo4j and Qdrant. Render has managed Postgres, so that one
+# is declared below.
+#
+# Every `sync: false` value is a secret entered once in the dashboard and never
+# committed. Anything with a literal value here is safe to read publicly.
+
+databases:
+  - name: argus-postgres
+    databaseName: argus
+    user: argus
+    # The free tier expires after 90 days and is not backed up. Fine for a demo,
+    # stated here so nobody discovers it later.
+    plan: free
+
+services:
+  # --- API ------------------------------------------------------------------
+  - type: web
+    name: argus-api
+    runtime: docker
+    plan: starter
+    # The repository root, because the backend image needs `parser/` and
+    # `database/` as well as `backend/`. See backend/Dockerfile.
+    dockerContext: .
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /health
+    # Render injects PORT; the image binds it. A hardcoded port would fail this
+    # health check and roll the deploy back.
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+
+      # Wired from the managed database above rather than pasted, so a rotation
+      # or a restore does not need this file edited.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: argus-postgres
+          property: connectionString
+
+      # Neo4j Aura. The URI scheme is `neo4j+s://`, which carries TLS itself —
+      # the driver takes no `encrypted=` argument, which is why Aura works
+      # unchanged.
+      - key: NEO4J_URI
+        sync: false
+      - key: NEO4J_USER
+        value: neo4j
+      - key: NEO4J_PASSWORD
+        sync: false
+      - key: NEO4J_DATABASE
+        value: neo4j
+
+      # Qdrant Cloud. The API key is required there, unlike the local container.
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: QDRANT_COLLECTION
+        value: argus_code_chunks
+
+      # The browser's origin — the Vercel URL, not this service's own. Set after
+      # the frontend deploys, because the value is the frontend's address.
+      - key: CORS_ORIGINS
+        sync: false
+
+      # Chat and embeddings are independent choices; Anthropic has no embeddings
+      # endpoint. Leave both keys unset and everything except search and chat
+      # still works — the API reports them as unavailable rather than failing.
+      - key: LLM_PROVIDER
+        value: anthropic
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-opus-5
+      - key: EMBEDDING_PROVIDER
+        value: openai
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: EMBEDDING_DIMENSIONS
+        value: 1536
+
+      # Clones live on the disk mounted below.
+      - key: WORKSPACE_DIR
+        value: /workspace
+      # Smaller than the local default: a starter instance has limited disk, and
+      # a 500 MB clone plus its history would fill it.
+      - key: MAX_REPO_SIZE_MB
+        value: 200
+      - key: HISTORY_DEPTH
+        value: 300
+      - key: ALLOW_PRIVATE_GIT_HOSTS
+        value: false
+
+    # Without a disk the filesystem is ephemeral and every restart re-clones
+    # every repository. The parse still works — it just pays for the clone again.
+    disk:
+      name: argus-workspace
+      mountPath: /workspace
+      sizeGB: 10
+
+    # Migrations run before the new instance takes traffic. Render runs this on
+    # each deploy, and `alembic upgrade head` is idempotent, so a deploy with no
+    # new migrations is a no-op rather than an error.
+    preDeployCommand: alembic upgrade head

@@ -1,6 +1,12 @@
 # Environment
+# Every env file, then the templates back. `.env.prod` in particular holds
+# production secrets and is created by copying `.env.prod.example`, so a rule
+# naming only `.env` and `.env.local` would have tracked it.
 .env
-.env.local
+.env.*
+!.env.example
+!.env.prod.example
+!.env.local.example
 *.env
 !.env.example
 
