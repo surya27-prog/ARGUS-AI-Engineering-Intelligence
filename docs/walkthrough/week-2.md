@@ -243,5 +243,6 @@ file list. And `v0.2-graph` was never tagged.
 What *did* exist by Sunday: paste a URL, and afterwards ask the graph what
 depends on any function in it — with every answer carrying how sure it is.
 
-**Next: Week 3 — retrieval and chat**, where the same code gets embedded so it can
-be found by meaning, and the two retrieval methods are combined. Not written yet.
+**Next: [Week 3 — retrieval and chat](week-3.md)**, where the same code gets
+embedded so it can be found by meaning, and the two retrieval methods are
+combined.

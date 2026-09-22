@@ -17,7 +17,7 @@ with the stack is assumed.
 |---|---|---|
 | 1 | Foundations and the parser — Docker, the three stores, FastAPI, Python's `ast` | [read](week-1.md) |
 | 2 | The knowledge graph — Neo4j, Cypher, and the confidence model | [read](week-2.md) |
-| 3 | Retrieval and chat — embeddings, Qdrant, hybrid retrieval | not written yet |
+| 3 | Retrieval and chat — embeddings, Qdrant, hybrid retrieval | [read](week-3.md) |
 | 4 | Impact, risk and the graph UI | not written yet |
 | 5 | Technical debt, caching, CI and hardening | not written yet |
 | 6 | Deployment, documentation and shipping | not written yet |
