@@ -258,5 +258,5 @@ was embedded, nothing was scored, and the planned `v0.1-parser` tag was never
 created. The week ended with a repository going in and a file list coming out,
 which was the goal.
 
-**Next: Week 2 — the knowledge graph**, where the structure becomes a graph and
-every inferred edge starts carrying a confidence. Not written yet.
+**Next: [Week 2 — the knowledge graph](week-2.md)**, where the structure becomes a
+graph and every inferred edge starts carrying a confidence.
