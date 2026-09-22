@@ -259,6 +259,5 @@ dashboard. The graph was being used to *find* code, not yet to judge it. And
 What existed by Sunday: ask a question in English and get an answer built out of
 the repository's own code, with a clickable citation for every part of it.
 
-**Next: Week 4 — impact, risk and the graph UI**, where the confidence values from
-Week 2 finally get multiplied along a path and turned into a number. Not written
-yet.
+**Next: [Week 4 — impact, risk and the graph](week-4.md)**, where the confidence
+values from Week 2 finally get multiplied along a path and turned into a number.
