@@ -1,0 +1,172 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch makes the first run's result irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  # The stub chat provider and the hash embedding provider are real
+  # implementations of the same interfaces, selected by these two variables and
+  # nothing else. That is what lets the whole suite run here with no API key and
+  # no billable call — the reason Week 3 split the two provider interfaces.
+  LLM_PROVIDER: stub
+  EMBEDDING_PROVIDER: hash
+
+jobs:
+  # The parser is stdlib-only and touches no service, so it runs first and fast.
+  # A break here is almost always the cause of a backend break, and finding out
+  # in 30 seconds beats finding out after the service containers have booted.
+  parser:
+    name: Parser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install
+        working-directory: parser
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest ruff
+
+      - name: Lint
+        working-directory: parser
+        run: ruff check .
+
+      - name: Test
+        working-directory: parser
+        run: pytest -q
+
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Credentials match the defaults in `app/core/config.py`, which is why
+        # this job needs no DATABASE_URL of its own.
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: argus
+          POSTGRES_PASSWORD: argus_dev_password
+          POSTGRES_DB: argus
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U argus"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+      neo4j:
+        image: neo4j:5.26-community
+        env:
+          NEO4J_AUTH: neo4j/argus_dev_password
+          # Far below the compose file's 2G. A CI runner has 7 GB total and
+          # three services in it; the fixtures here are a few hundred nodes.
+          NEO4J_server_memory_heap_max__size: 512m
+          NEO4J_server_memory_pagecache_size: 256m
+        ports: ["7687:7687", "7474:7474"]
+        # No --health-cmd: it runs inside the container, and this image has no
+        # curl. The wait step below polls from the runner instead.
+
+      qdrant:
+        image: qdrant/qdrant:v1.19.0
+        ports: ["6333:6333"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+
+      - name: Install
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Lint
+        working-directory: backend
+        run: ruff check .
+
+      # Postgres has a health check; these two do not, so they are waited on
+      # explicitly. Without this the first test fails on a connection refused
+      # that looks exactly like a real bug.
+      - name: Wait for Neo4j and Qdrant
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:7474 >/dev/null 2>&1; then
+              echo "neo4j up after ${i}s"; break
+            fi
+            sleep 1
+          done
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:6333/readyz >/dev/null 2>&1; then
+              echo "qdrant up after ${i}s"; break
+            fi
+            sleep 1
+          done
+          curl -fsS http://localhost:7474 >/dev/null
+          curl -fsS http://localhost:6333/readyz >/dev/null
+
+      - name: Migrate
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Test
+        working-directory: backend
+        run: >-
+          pytest -q
+          --cov=app
+          --cov-report=term-missing:skip-covered
+          --cov-report=xml
+          --cov-fail-under=${{ vars.COVERAGE_FLOOR || 60 }}
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+          if-no-files-found: warn
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      # The build is the real check: it typechecks every route again and catches
+      # the server/client boundary mistakes `tsc` alone does not.
+      - name: Build
+        working-directory: frontend
+        run: npm run build

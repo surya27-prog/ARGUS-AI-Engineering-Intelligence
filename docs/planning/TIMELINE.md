@@ -1,7 +1,7 @@
 # ARGUS — 6-Week Delivery Timeline
 
 **Project:** ARGUS – AI Engineering Intelligence Platform
-**Repo:** https://github.com/DeepuChandru/ARGUS-AI-Engineering-Intelligence
+**Repo:** https://github.com/surya27-prog/ARGUS-AI-Engineering-Intelligence
 **Window:** Mon 3 Aug 2026 → Sun 13 Sep 2026
 **Working model:** one shared track (no person-split). Mon–Sat are work days, Sunday is review + buffer.
 

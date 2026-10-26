@@ -15,11 +15,14 @@ def test_health_payload():
     assert body["status"] == "ok"
     assert body["version"] == "0.1.0"
     assert "postgres" in body
+    assert "neo4j" in body
 
 
-def test_health_reports_postgres_up():
+def test_health_reports_stores_up():
     """Requires the compose stack to be running."""
-    assert client.get("/health").json()["postgres"] == "up"
+    body = client.get("/health").json()
+    assert body["postgres"] == "up"
+    assert body["neo4j"] == "up"
 
 
 def test_root_redirects_to_docs_hint():

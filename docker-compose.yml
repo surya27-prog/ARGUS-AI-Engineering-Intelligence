@@ -60,7 +60,10 @@ services:
       start_period: 60s
 
   qdrant:
-    image: qdrant/qdrant:v1.12.5
+    # Kept within one minor of the `qdrant-client` pin in backend/pyproject.toml:
+    # the client warns and may misbehave when the major differs or the minor gap
+    # exceeds one.
+    image: qdrant/qdrant:v1.19.0
     container_name: argus-qdrant
     restart: unless-stopped
     ports:

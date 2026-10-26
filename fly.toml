@@ -1,0 +1,77 @@
+# ARGUS API on Fly — the alternative to render.yaml.
+#
+#     fly launch --no-deploy      # creates the app, reads this file
+#     fly volumes create argus_workspace --size 10 --region lhr
+#     fly secrets set NEO4J_URI=... NEO4J_PASSWORD=... QDRANT_URL=... \
+#                     QDRANT_API_KEY=... DATABASE_URL=... CORS_ORIGINS=... \
+#                     ANTHROPIC_API_KEY=... OPENAI_API_KEY=...
+#     fly deploy
+#
+# Secrets go through `fly secrets`, never into this file. Only the non-secret
+# configuration is here.
+#
+# Fly has no managed Postgres, Neo4j or Qdrant — all three are external. See
+# docs/deployment.md.
+
+app = "argus-api"
+primary_region = "lhr"
+
+[build]
+  # The repository root, because the backend image needs `parser/` and
+  # `database/`. Run `fly deploy` from the root, not from `backend/`.
+  dockerfile = "backend/Dockerfile"
+
+[env]
+  APP_ENV = "production"
+  LOG_LEVEL = "INFO"
+  NEO4J_USER = "neo4j"
+  NEO4J_DATABASE = "neo4j"
+  QDRANT_COLLECTION = "argus_code_chunks"
+  LLM_PROVIDER = "anthropic"
+  ANTHROPIC_MODEL = "claude-opus-5"
+  EMBEDDING_PROVIDER = "openai"
+  EMBEDDING_DIMENSIONS = "1536"
+  WORKSPACE_DIR = "/workspace"
+  MAX_REPO_SIZE_MB = "200"
+  HISTORY_DEPTH = "300"
+  ALLOW_PRIVATE_GIT_HOSTS = "false"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # A parse takes minutes and runs as a background task in the same process, so
+  # stopping the machine when HTTP goes idle would kill it mid-run.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 20
+    hard_limit = 40
+
+# Fly does not read the image's HEALTHCHECK, so it is declared again here.
+# `/health` always returns 200 when the process is serving — it reports each
+# store's reachability in the body rather than in the status, so a Postgres blip
+# does not get a working machine killed.
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "20s"
+  method = "GET"
+  path = "/health"
+
+[[mounts]]
+  source = "argus_workspace"
+  destination = "/workspace"
+
+[[vm]]
+  # The parse holds a whole repository's AST in memory, and the Neo4j write
+  # batches on top of that. 512 MB is not enough for a real repository.
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[deploy]
+  # Runs once per deploy, before the new machines take traffic.
+  release_command = "alembic upgrade head"
